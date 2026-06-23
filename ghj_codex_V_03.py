@@ -901,29 +901,47 @@ PAGE_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>GHJ KRX 수급 자동화</title>
+  <title>GHJ_PRJ_V_03</title>
   <style>
     :root {
-      --bg: #f3f6f5;
-      --panel: #fff;
-      --text: #1d282b;
-      --muted: #637176;
-      --line: #d8e2e3;
-      --accent: #0b8069;
-      --accent-dark: #096653;
+      color-scheme: light;
+      --bg: #eef2f7;
+      --panel: #ffffff;
+      --panel-soft: #f7f9fc;
+      --text: #17222b;
+      --muted: #607080;
+      --line: #d7e0ea;
+      --navy: #102235;
+      --navy-2: #172d44;
+      --accent: #007c89;
+      --accent-dark: #005d68;
+      --red: #c4302b;
       --danger: #b3261e;
       --success: #166534;
+      --shadow: 0 18px 42px rgba(16, 34, 53, .12);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background: var(--bg);
+      background: linear-gradient(180deg, #e9eef5 0%, #f6f8fb 44%, #eef2f7 100%);
       color: var(--text);
       font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
     }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(16, 34, 53, .045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(16, 34, 53, .045) 1px, transparent 1px);
+      background-size: 28px 28px;
+      mask-image: linear-gradient(180deg, rgba(0,0,0,.8), transparent 58%);
+    }
     main {
-      width: min(1080px, calc(100% - 32px));
+      position: relative;
+      width: min(1240px, calc(100% - 32px));
       margin: 0 auto;
       padding: 34px 0;
     }
@@ -931,7 +949,68 @@ PAGE_TEMPLATE = """
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
-      box-shadow: 0 16px 36px rgba(29, 40, 43, .08);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .system-bar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      min-height: 64px;
+      padding: 0 26px;
+      background: var(--navy);
+      color: #e8f0f7;
+      border-bottom: 3px solid var(--accent);
+    }
+    .brand-lockup {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 7px;
+      background: #e8f0f7;
+      color: var(--navy);
+      font-weight: 1000;
+      letter-spacing: 0;
+    }
+    .brand-name {
+      font-weight: 950;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    .brand-sub {
+      color: #a9bbca;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+    .status-stack {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 0 10px;
+      border: 1px solid rgba(232,240,247,.24);
+      border-radius: 999px;
+      color: #d8e5ef;
+      background: rgba(255,255,255,.06);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .content-area {
       padding: 28px;
     }
     .eyebrow {
@@ -940,14 +1019,36 @@ PAGE_TEMPLATE = """
       font-size: 13px;
       font-weight: 800;
     }
-    h1 { margin: 0; font-size: clamp(28px, 4vw, 40px); letter-spacing: 0; }
+    h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); letter-spacing: 0; }
     .sub { margin: 10px 0 0; color: var(--muted); line-height: 1.6; }
+    .origin-note {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid #ccd9e5;
+      border-left: 4px solid var(--red);
+      border-radius: 8px;
+      background: #fbfcfe;
+      color: #33485c;
+      font-weight: 850;
+      line-height: 1.55;
+    }
+    .origin-note span {
+      color: var(--red);
+      font-weight: 1000;
+    }
     form {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 16px;
       margin-top: 26px;
       align-items: end;
+      padding: 20px;
+      background: var(--panel-soft);
+      border: 1px solid var(--line);
+      border-radius: 8px;
     }
     .field { display: grid; gap: 7px; }
     .span2 { grid-column: span 2; }
@@ -968,7 +1069,7 @@ PAGE_TEMPLATE = """
       grid-column: span 6;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #f8fbfa;
+      background: #ffffff;
       padding: 14px 16px;
       color: var(--muted);
       line-height: 1.6;
@@ -986,6 +1087,11 @@ PAGE_TEMPLATE = """
       border: 1px solid var(--line);
       padding: 0 12px;
       background: #fff;
+    }
+    input:focus,
+    select:focus {
+      outline: 2px solid rgba(0, 124, 137, .22);
+      border-color: var(--accent);
     }
     button {
       border: 0;
@@ -1009,9 +1115,10 @@ PAGE_TEMPLATE = """
       margin: 26px 0 0;
       font-size: 24px;
       letter-spacing: 0;
+      color: var(--navy);
     }
     .metric {
-      background: #f8fbfa;
+      background: #fbfcfe;
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 16px;
@@ -1059,7 +1166,7 @@ PAGE_TEMPLATE = """
     .chart-card {
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #fff;
+      background: #fbfcfe;
       padding: 16px;
     }
     .chart-card h3 {
@@ -1180,8 +1287,8 @@ PAGE_TEMPLATE = """
       font-size: 13px;
     }
     th {
-      background: #eef5f4;
-      color: #24423d;
+      background: #edf3f8;
+      color: var(--navy);
       font-weight: 900;
     }
     .loading {
@@ -1253,8 +1360,9 @@ PAGE_TEMPLATE = """
       font-size: 14px;
     }
     @media (max-width: 860px) {
-      main { width: min(100% - 20px, 1080px); padding: 16px 0; }
-      .panel { padding: 18px; }
+      main { width: min(100% - 20px, 1240px); padding: 16px 0; }
+      .content-area { padding: 18px; }
+      .system-bar { align-items: flex-start; flex-direction: column; padding: 16px 18px; }
       form, .result, .visuals { grid-template-columns: 1fr; }
       .span2, .span3, .span6, .fixed-scope { grid-column: auto; }
     }
@@ -1263,9 +1371,25 @@ PAGE_TEMPLATE = """
 <body>
   <main>
     <section class="panel">
-      <p class="eyebrow">GHJ Codex V.03</p>
+      <header class="system-bar">
+        <div class="brand-lockup">
+          <div class="brand-mark">D</div>
+          <div>
+            <div class="brand-name">GHJ_PRJ_V_03</div>
+            <div class="brand-sub">DAISHIN INTERNAL ANALYTICS</div>
+          </div>
+        </div>
+        <div class="status-stack">
+          <span class="status-chip">KRX FLOW</span>
+          <span class="status-chip">SUPABASE LOGGED</span>
+          <span class="status-chip">V.03</span>
+        </div>
+      </header>
+      <div class="content-area">
+      <p class="eyebrow">GHJ_PRJ_V_03</p>
       <h1>오늘 기준 KRX 수급 분석</h1>
       <p class="sub">아이디, 비밀번호, OpenAPI 키만 입력하면 기존 노트북처럼 누적 구간과 최근 일별 수급을 한 번에 조회하고 기본 시각화까지 바로 보여줍니다.</p>
+      <div class="origin-note"><span>HISTORY</span> 대신증권의 고현진 주임이 몇개월간 고민하고 만든 자료입니다.</div>
       <div class="top-actions">
         <a class="secondary-link" href="/docs" target="_blank" rel="noopener">프로그램 상세 설명 보기</a>
         {% if user %}
@@ -1385,6 +1509,7 @@ PAGE_TEMPLATE = """
         </ol>
         <p class="note">OpenAPI 발급 주소는 https://openapi.krx.co.kr 입니다. KRX 정보데이터시스템 메인에서도 OpenAPI 링크를 통해 이동할 수 있습니다. 메뉴명이 바뀌면 OpenAPI, API Key, 인증키, 활용신청 같은 단어로 찾아보세요.</p>
       </section>
+      </div>
     </section>
   </main>
   <div class="loading" id="loading">
@@ -1424,7 +1549,7 @@ DOC_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>프로그램 상세 설명</title>
+  <title>GHJ_PRJ_V_03 상세 설명</title>
   <style>
     body {
       margin: 0;
@@ -1485,23 +1610,32 @@ AUTH_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ title }}</title>
+  <title>GHJ_PRJ_V_03 · {{ title }}</title>
   <style>
-    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#f3f6f5; color:#1d282b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
-    .box { width:min(440px, calc(100% - 32px)); background:#fff; border:1px solid #d8e2e3; border-radius:8px; padding:28px; box-shadow:0 16px 36px rgba(29,40,43,.08); }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:linear-gradient(180deg,#e9eef5,#f6f8fb); color:#17222b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    .box { width:min(460px, calc(100% - 32px)); background:#fff; border:1px solid #d7e0ea; border-radius:8px; overflow:hidden; box-shadow:0 18px 42px rgba(16,34,53,.12); }
+    .auth-head { padding:18px 24px; background:#102235; color:#e8f0f7; border-bottom:3px solid #007c89; }
+    .auth-head strong { display:block; font-size:18px; }
+    .auth-head span { display:block; margin-top:4px; color:#a9bbca; font-size:12px; font-weight:800; }
+    .auth-body { padding:28px; }
     h1 { margin:0 0 8px; letter-spacing:0; }
     p { color:#637176; line-height:1.6; }
     form { display:grid; gap:14px; margin-top:18px; }
     label { color:#637176; font-size:13px; font-weight:800; }
     input, button { width:100%; min-height:44px; border-radius:6px; font:inherit; box-sizing:border-box; }
     input { border:1px solid #d8e2e3; padding:0 12px; }
-    button { border:0; background:#0b8069; color:#fff; font-weight:900; cursor:pointer; }
-    a { color:#096653; font-weight:900; }
+    button { border:0; background:#007c89; color:#fff; font-weight:900; cursor:pointer; }
+    a { color:#005d68; font-weight:900; }
     .message { padding:10px 12px; border-radius:6px; background:#fff1f1; color:#b3261e; font-weight:800; }
   </style>
 </head>
 <body>
   <main class="box">
+    <div class="auth-head">
+      <strong>GHJ_PRJ_V_03</strong>
+      <span>DAISHIN INTERNAL ANALYTICS</span>
+    </div>
+    <div class="auth-body">
     <h1>{{ title }}</h1>
     <p>{{ description }}</p>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -1523,6 +1657,7 @@ AUTH_TEMPLATE = """
       <button type="submit">{{ button }}</button>
     </form>
     <p>{{ switch_text }} <a href="{{ switch_url }}">{{ switch_label }}</a></p>
+    </div>
   </main>
 </body>
 </html>
@@ -1534,28 +1669,35 @@ HISTORY_TEMPLATE = """
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>조회 이력</title>
+  <title>GHJ_PRJ_V_03 · 조회 이력</title>
   <style>
-    body { margin:0; background:#f3f6f5; color:#1d282b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
-    main { width:min(1100px, calc(100% - 32px)); margin:0 auto; padding:32px 0; }
-    .panel { background:#fff; border:1px solid #d8e2e3; border-radius:8px; padding:26px; box-shadow:0 16px 36px rgba(29,40,43,.08); }
+    body { margin:0; background:linear-gradient(180deg,#e9eef5,#f6f8fb); color:#17222b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    main { width:min(1180px, calc(100% - 32px)); margin:0 auto; padding:32px 0; }
+    .panel { background:#fff; border:1px solid #d7e0ea; border-radius:8px; overflow:hidden; box-shadow:0 18px 42px rgba(16,34,53,.12); }
+    .hist-head { padding:20px 26px; background:#102235; color:#e8f0f7; border-bottom:3px solid #007c89; }
+    .hist-head p { margin:6px 0 0; color:#a9bbca; font-weight:800; }
+    .hist-body { padding:26px; }
     h1 { margin:0 0 16px; letter-spacing:0; }
-    a { color:#096653; font-weight:900; }
+    a { color:#005d68; font-weight:900; }
     table { width:100%; border-collapse:collapse; min-width:860px; }
     th, td { border-bottom:1px solid #d8e2e3; padding:10px 12px; text-align:left; white-space:nowrap; font-size:13px; }
-    th { background:#eef5f4; color:#24423d; }
-    .wrap { overflow:auto; border:1px solid #d8e2e3; border-radius:8px; }
+    th { background:#edf3f8; color:#102235; }
+    .wrap { overflow:auto; border:1px solid #d7e0ea; border-radius:8px; }
     .actions { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
   </style>
 </head>
 <body>
   <main>
     <section class="panel">
+      <div class="hist-head">
+        <h1>GHJ_PRJ_V_03 · 조회 이력</h1>
+        <p>대신증권의 고현진 주임이 몇개월간 고민하고 만든 자료입니다.</p>
+      </div>
+      <div class="hist-body">
       <div class="actions">
         <a href="/">분석 화면</a>
         <a href="/logout">로그아웃</a>
       </div>
-      <h1>조회 이력</h1>
       {% if jobs %}
         <div class="wrap">
           <table>
@@ -1592,6 +1734,7 @@ HISTORY_TEMPLATE = """
       {% else %}
         <p>아직 조회 이력이 없습니다.</p>
       {% endif %}
+      </div>
     </section>
   </main>
 </body>

@@ -1,4 +1,4 @@
-# GHJ KRX Flow Dashboard
+# GHJ_PRJ_V_03
 
 KRX 정보데이터시스템 수급 데이터를 Selenium 없이 API 방식으로 조회하고, 웹 화면에서 기본 분석/시각화/엑셀 다운로드를 제공하는 Flask 기반 로컬 앱입니다.
 
