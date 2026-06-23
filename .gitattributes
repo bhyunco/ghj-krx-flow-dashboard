@@ -1,0 +1,5 @@
+*.py text working-tree-encoding=UTF-8
+*.md text working-tree-encoding=UTF-8
+*.toml text working-tree-encoding=UTF-8
+*.json text working-tree-encoding=UTF-8
+*.txt text working-tree-encoding=UTF-8

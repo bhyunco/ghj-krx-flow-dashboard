@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import re
@@ -7,16 +6,11 @@ import webbrowser
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from http.cookiejar import CookieJar
-from io import BytesIO
 from pathlib import Path
 from typing import Any
 from urllib import parse, request
 from urllib.error import HTTPError
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 import pandas as pd
 from flask import Flask, flash, render_template_string, request as flask_request, send_file
 from markupsafe import escape
@@ -343,16 +337,86 @@ def stock_names_from_index(index_obj: pd.Index) -> list[str]:
     return names
 
 
-def fig_to_base64(fig: plt.Figure) -> str:
-    buffer = BytesIO()
-    fig.savefig(buffer, format="png", dpi=140, bbox_inches="tight")
-    plt.close(fig)
-    buffer.seek(0)
-    return base64.b64encode(buffer.read()).decode("ascii")
+def compact_number(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    sign = "-" if number < 0 else ""
+    number = abs(number)
+    if number >= 100_000_000:
+        return f"{sign}{number / 100_000_000:.1f}억"
+    if number >= 10_000:
+        return f"{sign}{number / 10_000:.1f}만"
+    return f"{sign}{number:,.0f}"
 
 
-def add_chart(charts: list[dict[str, str]], title: str, fig: plt.Figure) -> None:
-    charts.append({"title": title, "image": fig_to_base64(fig)})
+def make_grouped_bar_html(labels: list[str], series: list[dict[str, Any]]) -> str:
+    all_values = [abs(float(value)) for item in series for value in item["values"]]
+    max_abs = max(all_values) if all_values else 1
+    rows = []
+    colors = ["#0b8069", "#3858a8", "#b7791f"]
+    for row_index, label in enumerate(labels):
+        bars = []
+        for series_index, item in enumerate(series):
+            value = float(item["values"][row_index])
+            width = min(abs(value) / max_abs * 100, 100)
+            color = colors[series_index % len(colors)]
+            direction = "negative" if value < 0 else "positive"
+            bars.append(
+                f"""
+                <div class="mini-bar-row">
+                  <span class="series-name">{escape(item["name"])}</span>
+                  <div class="mini-bar-track">
+                    <span class="mini-bar {direction}" style="width:{width:.2f}%; background:{color};"></span>
+                  </div>
+                  <span class="bar-value">{escape(compact_number(value))}</span>
+                </div>
+                """
+            )
+        rows.append(
+            f"""
+            <div class="chart-row">
+              <div class="chart-label">{escape(label)}</div>
+              <div class="chart-bars">{''.join(bars)}</div>
+            </div>
+            """
+        )
+    return f'<div class="html-chart grouped-bar">{"".join(rows)}</div>'
+
+
+def make_scatter_html(points: list[dict[str, Any]]) -> str:
+    if not points:
+        return '<p class="empty-chart">표시할 데이터가 없습니다.</p>'
+    xs = [float(point["x"]) for point in points]
+    ys = [float(point["y"]) for point in points]
+    max_abs = max([abs(value) for value in xs + ys] or [1]) or 1
+    svg_points = []
+    for point in points[:700]:
+        x = 50 + (float(point["x"]) / max_abs) * 42
+        y = 50 - (float(point["y"]) / max_abs) * 42
+        x = min(max(x, 5), 95)
+        y = min(max(y, 5), 95)
+        svg_points.append(
+            f'<circle cx="{x:.2f}%" cy="{y:.2f}%" r="2.2" fill="#0b8069" opacity="0.34">'
+            f'<title>{escape(point["name"])} / 외국인 {escape(compact_number(point["x"]))} / 기관 {escape(compact_number(point["y"]))}</title>'
+            '</circle>'
+        )
+    return f"""
+    <div class="scatter-wrap">
+      <svg viewBox="0 0 100 100" role="img" aria-label="외국인 기관합계 산점도">
+        <line x1="50" y1="4" x2="50" y2="96" stroke="#7b8a90" stroke-width="0.4" />
+        <line x1="4" y1="50" x2="96" y2="50" stroke="#7b8a90" stroke-width="0.4" />
+        {''.join(svg_points)}
+      </svg>
+      <div class="axis-label x-axis">외국인 순매수</div>
+      <div class="axis-label y-axis">기관합계 순매수</div>
+    </div>
+    """
+
+
+def add_html_chart(charts: list[dict[str, str]], title: str, html: str) -> None:
+    charts.append({"title": title, "html": html})
 
 
 def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
@@ -360,40 +424,32 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
     if last_df.empty:
         return charts
 
-    plt.rcParams["font.family"] = ["Malgun Gothic", "DejaVu Sans"]
-    plt.rcParams["axes.unicode_minus"] = False
-
     df_clean = last_df.fillna(0).copy()
 
     if ("1개월누적", "외국인") in df_clean.columns and ("1개월누적", "기관합계") in df_clean.columns:
         top10_idx = df_clean[("1개월누적", "외국인")].nlargest(10).index
         plot_df = df_clean.loc[top10_idx, [("1개월누적", "외국인"), ("1개월누적", "기관합계")]].copy()
         plot_df.columns = ["외국인", "기관합계"]
-        fig, ax = plt.subplots(figsize=(11, 5.8))
-        plot_df.plot(kind="bar", ax=ax, color=["#0b8069", "#3858a8"])
-        ax.set_title("1개월누적 외국인 순매수 TOP10")
-        ax.set_xlabel("")
-        ax.set_ylabel("순매수 수량")
-        ax.set_xticklabels(stock_names_from_index(plot_df.index), rotation=35, ha="right")
-        ax.axhline(0, color="#263238", linewidth=1)
-        ax.grid(axis="y", alpha=0.25)
-        add_chart(charts, "1개월누적 외국인 TOP10", fig)
-
-        fig, ax = plt.subplots(figsize=(6.8, 6.2))
-        ax.scatter(
-            df_clean[("1개월누적", "외국인")],
-            df_clean[("1개월누적", "기관합계")],
-            alpha=0.35,
-            color="#0b8069",
-            s=18,
+        add_html_chart(
+            charts,
+            "1개월누적 외국인 TOP10",
+            make_grouped_bar_html(
+                stock_names_from_index(plot_df.index),
+                [
+                    {"name": "외국인", "values": plot_df["외국인"].tolist()},
+                    {"name": "기관합계", "values": plot_df["기관합계"].tolist()},
+                ],
+            ),
         )
-        ax.axhline(0, color="#263238", linewidth=1)
-        ax.axvline(0, color="#263238", linewidth=1)
-        ax.set_title("외국인 vs 기관합계 산점도")
-        ax.set_xlabel("외국인 순매수")
-        ax.set_ylabel("기관합계 순매수")
-        ax.grid(alpha=0.25)
-        add_chart(charts, "외국인 vs 기관합계", fig)
+
+        scatter_df = df_clean[[("1개월누적", "외국인"), ("1개월누적", "기관합계")]].copy()
+        scatter_df.columns = ["외국인", "기관합계"]
+        scatter_names = stock_names_from_index(scatter_df.index)
+        points = [
+            {"name": scatter_names[index], "x": row["외국인"], "y": row["기관합계"]}
+            for index, (_, row) in enumerate(scatter_df.iterrows())
+        ]
+        add_html_chart(charts, "외국인 vs 기관합계", make_scatter_html(points))
 
     recent_periods = [
         period
@@ -403,17 +459,17 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
     if recent_periods:
         foreign_mean = df_clean.xs("외국인", level=1, axis=1)[recent_periods].mean()
         inst_mean = df_clean.xs("기관합계", level=1, axis=1)[recent_periods].mean()
-        fig, ax = plt.subplots(figsize=(10, 5.4))
-        x = range(len(recent_periods))
-        ax.bar([v - 0.18 for v in x], foreign_mean.values, width=0.36, label="외국인", color="#0b8069")
-        ax.bar([v + 0.18 for v in x], inst_mean.values, width=0.36, label="기관합계", color="#3858a8")
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(recent_periods)
-        ax.set_title("최근 영업일 평균 순매수")
-        ax.axhline(0, color="#263238", linewidth=1)
-        ax.grid(axis="y", alpha=0.25)
-        ax.legend()
-        add_chart(charts, "최근 영업일 평균", fig)
+        add_html_chart(
+            charts,
+            "최근 거래일 평균",
+            make_grouped_bar_html(
+                recent_periods,
+                [
+                    {"name": "외국인", "values": foreign_mean.tolist()},
+                    {"name": "기관합계", "values": inst_mean.tolist()},
+                ],
+            ),
+        )
 
     acc_periods = [
         period
@@ -423,17 +479,17 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
     if acc_periods:
         foreign_acc = df_clean.xs("외국인", level=1, axis=1)[acc_periods].mean()
         inst_acc = df_clean.xs("기관합계", level=1, axis=1)[acc_periods].mean()
-        fig, ax = plt.subplots(figsize=(8.5, 5.2))
-        x = range(len(acc_periods))
-        ax.bar([v - 0.18 for v in x], foreign_acc.values, width=0.36, label="외국인", color="#0b8069")
-        ax.bar([v + 0.18 for v in x], inst_acc.values, width=0.36, label="기관합계", color="#3858a8")
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(acc_periods)
-        ax.set_title("1개월 / 3개월 / 6개월 누적 평균 순매수")
-        ax.axhline(0, color="#263238", linewidth=1)
-        ax.grid(axis="y", alpha=0.25)
-        ax.legend()
-        add_chart(charts, "누적 평균 비교", fig)
+        add_html_chart(
+            charts,
+            "누적 평균 비교",
+            make_grouped_bar_html(
+                acc_periods,
+                [
+                    {"name": "외국인", "values": foreign_acc.tolist()},
+                    {"name": "기관합계", "values": inst_acc.tolist()},
+                ],
+            ),
+        )
 
     return charts
 
@@ -528,6 +584,14 @@ def run_collection(
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "ghj-codex-local-secret")
+
+
+@app.after_request
+def add_utf8_headers(response):
+    if response.content_type and response.content_type.startswith("text/html"):
+        response.headers["Content-Type"] = "text/html; charset=utf-8"
+    return response
+
 
 PAGE_TEMPLATE = """
 <!doctype html>
@@ -701,10 +765,98 @@ PAGE_TEMPLATE = """
       font-size: 17px;
       letter-spacing: 0;
     }
-    .chart-card img {
+    .html-chart {
+      display: grid;
+      gap: 12px;
+    }
+    .chart-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 160px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border-bottom: 1px solid #edf2f3;
+      padding-bottom: 10px;
+    }
+    .chart-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .chart-label {
+      font-size: 13px;
+      font-weight: 900;
+      word-break: keep-all;
+      overflow-wrap: anywhere;
+    }
+    .chart-bars {
+      display: grid;
+      gap: 6px;
+    }
+    .mini-bar-row {
+      display: grid;
+      grid-template-columns: 64px minmax(0, 1fr) 72px;
+      gap: 8px;
+      align-items: center;
+    }
+    .series-name {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+    .mini-bar-track {
+      height: 12px;
+      border-radius: 999px;
+      background: #e6eef0;
+      overflow: hidden;
+    }
+    .mini-bar {
+      display: block;
+      height: 100%;
+      border-radius: 999px;
+    }
+    .mini-bar.negative {
+      opacity: .62;
+    }
+    .bar-value {
+      font-size: 12px;
+      color: var(--text);
+      font-weight: 800;
+      text-align: right;
+    }
+    .scatter-wrap {
+      position: relative;
+      min-height: 360px;
+      padding: 8px 8px 34px 42px;
+    }
+    .scatter-wrap svg {
       display: block;
       width: 100%;
-      height: auto;
+      height: 340px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #f8fbfa;
+    }
+    .axis-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .x-axis {
+      position: absolute;
+      left: 42px;
+      right: 8px;
+      bottom: 4px;
+      text-align: center;
+    }
+    .y-axis {
+      position: absolute;
+      left: -4px;
+      top: 48%;
+      transform: rotate(-90deg);
+      transform-origin: center;
+    }
+    .empty-chart {
+      color: var(--muted);
+      margin: 0;
     }
     .table-wrap {
       margin-top: 18px;
@@ -883,7 +1035,7 @@ PAGE_TEMPLATE = """
             {% for chart in result.charts %}
               <article class="chart-card">
                 <h3>{{ chart.title }}</h3>
-                <img src="data:image/png;base64,{{ chart.image }}" alt="{{ chart.title }}">
+                {{ chart.html | safe }}
               </article>
             {% endfor %}
           </section>
