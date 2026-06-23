@@ -529,20 +529,20 @@ def make_grouped_bar_html(labels: list[str], series: list[dict[str, Any]]) -> st
     all_values = [abs(float(value)) for item in series for value in item["values"]]
     max_abs = max(all_values) if all_values else 1
     rows = []
-    colors = ["#0b8069", "#3858a8", "#b7791f"]
+    colors = ["#39ff88", "#3ba7ff", "#ff4d6d", "#ffd166"]
     for row_index, label in enumerate(labels):
         bars = []
         for series_index, item in enumerate(series):
             value = float(item["values"][row_index])
             width = min(abs(value) / max_abs * 100, 100)
-            color = colors[series_index % len(colors)]
+            color = item.get("color") or colors[series_index % len(colors)]
             direction = "negative" if value < 0 else "positive"
             bars.append(
                 f"""
                 <div class="mini-bar-row">
                   <span class="series-name">{escape(item["name"])}</span>
                   <div class="mini-bar-track">
-                    <span class="mini-bar {direction}" style="width:{width:.2f}%; background:{color};"></span>
+                    <span class="mini-bar {direction}" style="width:{width:.2f}%; background:{color}; box-shadow:0 0 13px {color};"></span>
                   </div>
                   <span class="bar-value">{escape(compact_number(value))}</span>
                 </div>
@@ -571,8 +571,9 @@ def make_scatter_html(points: list[dict[str, Any]]) -> str:
         y = 50 - (float(point["y"]) / max_abs) * 42
         x = min(max(x, 5), 95)
         y = min(max(y, 5), 95)
+        color = "#ff4d6d" if float(point["x"]) >= 0 else "#3ba7ff"
         svg_points.append(
-            f'<circle cx="{x:.2f}%" cy="{y:.2f}%" r="2.2" fill="#0b8069" opacity="0.34">'
+            f'<circle cx="{x:.2f}%" cy="{y:.2f}%" r="2.6" fill="{color}" opacity="0.56">'
             f'<title>{escape(point["name"])} / 외국인 {escape(compact_number(point["x"]))} / 기관 {escape(compact_number(point["y"]))}</title>'
             '</circle>'
         )
@@ -593,12 +594,43 @@ def add_html_chart(charts: list[dict[str, str]], title: str, html: str) -> None:
     charts.append({"title": title, "html": html})
 
 
-def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
+def create_buy_sell_chart(base_df: pd.DataFrame) -> str:
+    if base_df.empty:
+        return '<p class="empty-chart">표시할 데이터가 없습니다.</p>'
+
+    required_columns = {"buyer", "period(D-00)_start", "종목명", "거래량_매수", "거래량_매도", "거래량_순매수"}
+    if not required_columns.issubset(set(base_df.columns)):
+        return '<p class="empty-chart">매수/매도 차트를 만들 수 있는 컬럼이 없습니다.</p>'
+
+    foreign_month = base_df[
+        (base_df["buyer"] == "외국인")
+        & (pd.to_numeric(base_df["period(D-00)_start"], errors="coerce") == -30)
+    ].copy()
+    if foreign_month.empty:
+        return '<p class="empty-chart">1개월 외국인 매수/매도 데이터가 없습니다.</p>'
+
+    for column in ["거래량_매수", "거래량_매도", "거래량_순매수"]:
+        foreign_month[column] = pd.to_numeric(foreign_month[column], errors="coerce").fillna(0)
+
+    top_flow = foreign_month.reindex(foreign_month["거래량_순매수"].abs().sort_values(ascending=False).index).head(10)
+    return make_grouped_bar_html(
+        top_flow["종목명"].astype(str).tolist(),
+        [
+            {"name": "매수", "values": top_flow["거래량_매수"].tolist(), "color": "#ff4d6d"},
+            {"name": "매도", "values": top_flow["거래량_매도"].tolist(), "color": "#3ba7ff"},
+        ],
+    )
+
+
+def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = None) -> list[dict[str, str]]:
     charts: list[dict[str, str]] = []
     if last_df.empty:
         return charts
 
     df_clean = last_df.fillna(0).copy()
+
+    if base_df is not None:
+        add_html_chart(charts, "1개월 외국인 매수/매도 강도 TOP10", create_buy_sell_chart(base_df))
 
     if ("1개월누적", "외국인") in df_clean.columns and ("1개월누적", "기관합계") in df_clean.columns:
         top10_idx = df_clean[("1개월누적", "외국인")].nlargest(10).index
@@ -610,8 +642,8 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
             make_grouped_bar_html(
                 stock_names_from_index(plot_df.index),
                 [
-                    {"name": "외국인", "values": plot_df["외국인"].tolist()},
-                    {"name": "기관합계", "values": plot_df["기관합계"].tolist()},
+                    {"name": "외국인", "values": plot_df["외국인"].tolist(), "color": "#39ff88"},
+                    {"name": "기관합계", "values": plot_df["기관합계"].tolist(), "color": "#3ba7ff"},
                 ],
             ),
         )
@@ -639,8 +671,8 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
             make_grouped_bar_html(
                 recent_periods,
                 [
-                    {"name": "외국인", "values": foreign_mean.tolist()},
-                    {"name": "기관합계", "values": inst_mean.tolist()},
+                    {"name": "외국인", "values": foreign_mean.tolist(), "color": "#39ff88"},
+                    {"name": "기관합계", "values": inst_mean.tolist(), "color": "#3ba7ff"},
                 ],
             ),
         )
@@ -659,8 +691,8 @@ def create_visualizations(last_df: pd.DataFrame) -> list[dict[str, str]]:
             make_grouped_bar_html(
                 acc_periods,
                 [
-                    {"name": "외국인", "values": foreign_acc.tolist()},
-                    {"name": "기관합계", "values": inst_acc.tolist()},
+                    {"name": "외국인", "values": foreign_acc.tolist(), "color": "#39ff88"},
+                    {"name": "기관합계", "values": inst_acc.tolist(), "color": "#3ba7ff"},
                 ],
             ),
         )
@@ -845,7 +877,7 @@ def run_collection(
 
         base_df = pd.concat(frames, ignore_index=True)
         last_df = create_pivot(base_df)
-        charts = create_visualizations(last_df)
+        charts = create_visualizations(last_df, base_df)
         top_rows = create_top_rows(last_df)
         output_path, last_rows = write_outputs(base_df, last_df, out_dir, now)
 
@@ -1044,6 +1076,37 @@ PAGE_TEMPLATE = """
     .span2 { grid-column: span 2; }
     .span3 { grid-column: span 3; }
     .span6 { grid-column: span 6; }
+    .remember-field {
+      grid-column: span 6;
+      display: flex;
+      align-items: flex-start;
+      gap: 11px;
+      border: 1px solid rgba(57,255,136,.18);
+      border-radius: 8px;
+      background: rgba(57,255,136,.035);
+      padding: 13px 14px;
+    }
+    .remember-field input {
+      width: 18px;
+      min-height: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--accent);
+      flex: 0 0 auto;
+    }
+    .remember-field label {
+      color: var(--text);
+      cursor: pointer;
+    }
+    .remember-copy {
+      display: grid;
+      gap: 3px;
+    }
+    .remember-copy span {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
     label {
       color: var(--muted);
       font-size: 13px;
@@ -1155,17 +1218,37 @@ PAGE_TEMPLATE = """
       margin-top: 22px;
     }
     .chart-card {
-      border: 1px solid var(--line);
+      position: relative;
+      overflow: hidden;
+      border: 1px solid rgba(57,255,136,.18);
       border-radius: 8px;
-      background: rgba(5,12,9,.74);
+      background:
+        linear-gradient(135deg, rgba(57,255,136,.07), transparent 34%),
+        radial-gradient(circle at 86% 12%, rgba(59,167,255,.12), transparent 30%),
+        rgba(5,12,9,.82);
       padding: 16px;
+      box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 0 32px rgba(57,255,136,.03);
+    }
+    .chart-card::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background-image: linear-gradient(rgba(57,255,136,.055) 1px, transparent 1px);
+      background-size: 100% 16px;
+      mix-blend-mode: screen;
+      opacity: .38;
     }
     .chart-card h3 {
+      position: relative;
       margin: 0 0 12px;
       font-size: 17px;
       letter-spacing: 0;
+      color: #dfffea;
+      text-shadow: 0 0 14px rgba(57,255,136,.18);
     }
     .html-chart {
+      position: relative;
       display: grid;
       gap: 12px;
     }
@@ -1205,13 +1288,15 @@ PAGE_TEMPLATE = """
     .mini-bar-track {
       height: 12px;
       border-radius: 999px;
-      background: rgba(57,255,136,.10);
+      background: rgba(212,255,232,.08);
+      border: 1px solid rgba(212,255,232,.08);
       overflow: hidden;
     }
     .mini-bar {
       display: block;
       height: 100%;
       border-radius: 999px;
+      min-width: 2px;
     }
     .mini-bar.negative {
       opacity: .62;
@@ -1231,9 +1316,13 @@ PAGE_TEMPLATE = """
       display: block;
       width: 100%;
       height: 340px;
-      border: 1px solid var(--line);
+      border: 1px solid rgba(57,255,136,.18);
       border-radius: 8px;
-      background: #07100c;
+      background:
+        radial-gradient(circle at 50% 50%, rgba(57,255,136,.08), transparent 42%),
+        linear-gradient(90deg, rgba(59,167,255,.08), transparent 34%, rgba(255,77,109,.08)),
+        #07100c;
+      filter: drop-shadow(0 0 12px rgba(57,255,136,.10));
     }
     .axis-label {
       color: var(--muted);
@@ -1356,7 +1445,7 @@ PAGE_TEMPLATE = """
       .content-area { padding: 18px; }
       .system-bar { align-items: flex-start; flex-direction: column; padding: 16px 18px; }
       form, .result, .visuals { grid-template-columns: 1fr; }
-      .span2, .span3, .span6, .fixed-scope { grid-column: auto; }
+      .span2, .span3, .span6, .fixed-scope, .remember-field { grid-column: auto; }
     }
   </style>
 </head>
@@ -1415,8 +1504,15 @@ PAGE_TEMPLATE = """
         </div>
         <div class="field span2">
           <label for="openapi_key">OpenAPI 키</label>
-          <input id="openapi_key" name="openapi_key" type="password" value="{{ form.openapi_key }}" required>
+          <input id="openapi_key" name="openapi_key" type="password" autocomplete="off" required>
           <span class="help">KRX OpenAPI 사이트에서 발급받은 인증키입니다.</span>
+        </div>
+        <div class="remember-field">
+          <input id="remember_credentials" type="checkbox">
+          <div class="remember-copy">
+            <label for="remember_credentials">이 브라우저에 KRX 아이디/비밀번호/OpenAPI 키 저장</label>
+            <span>개인 PC에서만 사용하세요. 저장값은 서버가 아니라 현재 브라우저에만 보관됩니다.</span>
+          </div>
         </div>
         <div class="field span2">
           <label for="as_of">기준일</label>
@@ -1516,8 +1612,49 @@ PAGE_TEMPLATE = """
     const loading = document.getElementById("loading");
     const fill = document.getElementById("bar-fill");
     const percent = document.getElementById("percent");
+    const rememberCredentials = document.getElementById("remember_credentials");
+    const krxIdInput = document.getElementById("krx_id");
+    const krxPwInput = document.getElementById("krx_pw");
+    const openApiInput = document.getElementById("openapi_key");
+    const credentialStorageKey = "ghj_prj_v_03_krx_credentials";
+
+    function readSavedCredentials() {
+      try {
+        return JSON.parse(localStorage.getItem(credentialStorageKey) || "{}");
+      } catch (error) {
+        return {};
+      }
+    }
+
+    function saveCredentials() {
+      if (!rememberCredentials || !rememberCredentials.checked) {
+        localStorage.removeItem(credentialStorageKey);
+        return;
+      }
+      localStorage.setItem(credentialStorageKey, JSON.stringify({
+        krxId: krxIdInput ? krxIdInput.value : "",
+        krxPw: krxPwInput ? krxPwInput.value : "",
+        openApiKey: openApiInput ? openApiInput.value : ""
+      }));
+    }
+
+    if (rememberCredentials && krxIdInput && krxPwInput && openApiInput) {
+      const savedCredentials = readSavedCredentials();
+      if (savedCredentials.krxId || savedCredentials.krxPw || savedCredentials.openApiKey) {
+        rememberCredentials.checked = true;
+        if (!krxIdInput.value) krxIdInput.value = savedCredentials.krxId || "";
+        krxPwInput.value = savedCredentials.krxPw || "";
+        openApiInput.value = savedCredentials.openApiKey || "";
+      }
+      rememberCredentials.addEventListener("change", saveCredentials);
+      [krxIdInput, krxPwInput, openApiInput].forEach((input) => {
+        input.addEventListener("input", saveCredentials);
+      });
+    }
+
     if (form) {
       form.addEventListener("submit", () => {
+        saveCredentials();
         loading.classList.add("active");
         let value = 0;
         const timer = setInterval(() => {
