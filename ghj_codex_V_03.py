@@ -849,7 +849,8 @@ def run_collection(
 
         storage_path = None
         if job_id and user_id:
-            storage_path = f"{user_id}/{job_id}/{output_path.name}"
+            storage_filename = f"krx_result_{now.strftime('%Y%m%d_%H%M%S')}.xlsx"
+            storage_path = f"{user_id}/{job_id}/{storage_filename}"
             storage_upload(output_path, storage_path)
             rest_insert("query_summaries", [{
                 "job_id": job_id,
