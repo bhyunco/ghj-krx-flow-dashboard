@@ -645,40 +645,135 @@ def make_scatter_html(points: list[dict[str, Any]]) -> str:
     """
 
 
-def add_html_chart(charts: list[dict[str, str]], title: str, html: str) -> None:
-    charts.append({"title": title, "html": html})
-
-
-def create_buy_sell_chart(base_df: pd.DataFrame) -> str:
-    if base_df.empty:
+def make_total_volume_html(
+    rows: list[dict[str, Any]],
+    *,
+    note: str,
+    unit: str = "주",
+) -> str:
+    if not rows:
         return '<p class="empty-chart">표시할 데이터가 없습니다.</p>'
+
+    max_total = max(float(row["total"]) for row in rows) or 1
+    row_html = []
+    for row in rows:
+        buy = float(row["buy"])
+        sell = float(row["sell"])
+        total = float(row["total"])
+        total_width = min(total / max_total * 100, 100)
+        buy_share = (buy / total * 100) if total else 0
+        sell_share = (sell / total * 100) if total else 0
+        row_html.append(
+            f"""
+            <div class="total-volume-row">
+              <div class="chart-label">{escape(row["name"])}</div>
+              <div class="total-volume-body">
+                <div class="total-volume-track">
+                  <div class="total-volume-fill" style="width:{total_width:.2f}%;">
+                    <span class="total-segment buy" style="width:{buy_share:.2f}%;"></span>
+                    <span class="total-segment sell" style="width:{sell_share:.2f}%;"></span>
+                  </div>
+                </div>
+                <div class="total-volume-values">
+                  <span>총 {escape(format_chart_value(total, unit))}</span>
+                  <span>매수 {escape(format_chart_value(buy, unit))}</span>
+                  <span>매도 {escape(format_chart_value(sell, unit))}</span>
+                </div>
+              </div>
+            </div>
+            """
+        )
+    return f"""
+    <div class="html-chart total-volume-chart">
+      {make_chart_meta_html(
+        note,
+        [
+          {"label": "매수량", "color": BUY_COLOR},
+          {"label": "매도량", "color": SELL_COLOR},
+        ],
+      )}
+      {''.join(row_html)}
+    </div>
+    """
+
+
+def add_html_chart(
+    charts: list[dict[str, str]],
+    title: str,
+    html: str,
+    *,
+    category: str,
+    investor: str = "",
+    description: str = "",
+) -> None:
+    charts.append({
+        "title": title,
+        "html": html,
+        "category": category,
+        "investor": investor,
+        "description": description,
+    })
+
+
+def base_period_df(base_df: pd.DataFrame, buyer: str, period_start: int) -> pd.DataFrame:
+    if base_df.empty:
+        return pd.DataFrame()
 
     required_columns = {"buyer", "period(D-00)_start", "종목명", "거래량_매수", "거래량_매도", "거래량_순매수"}
     if not required_columns.issubset(set(base_df.columns)):
-        return '<p class="empty-chart">매수/매도 차트를 만들 수 있는 컬럼이 없습니다.</p>'
+        return pd.DataFrame()
 
-    foreign_month = base_df[
-        (base_df["buyer"] == "외국인")
-        & (pd.to_numeric(base_df["period(D-00)_start"], errors="coerce") == -30)
+    filtered = base_df[
+        (base_df["buyer"] == buyer)
+        & (pd.to_numeric(base_df["period(D-00)_start"], errors="coerce") == period_start)
     ].copy()
-    if foreign_month.empty:
-        return '<p class="empty-chart">1개월 외국인 매수/매도 데이터가 없습니다.</p>'
+    if filtered.empty:
+        return filtered
 
     for column in ["거래량_매수", "거래량_매도", "거래량_순매수"]:
-        foreign_month[column] = pd.to_numeric(foreign_month[column], errors="coerce").fillna(0)
+        filtered[column] = pd.to_numeric(filtered[column], errors="coerce").fillna(0)
+    filtered["거래량_총량"] = filtered["거래량_매수"] + filtered["거래량_매도"]
+    return filtered
 
-    top_flow = foreign_month.reindex(foreign_month["거래량_순매수"].abs().sort_values(ascending=False).index).head(10)
+
+def create_buy_sell_chart(base_df: pd.DataFrame, buyer: str, period_start: int, period_name: str) -> str:
+    flow_df = base_period_df(base_df, buyer, period_start)
+    if flow_df.empty:
+        return f'<p class="empty-chart">{escape(period_name)} {escape(buyer)} 매수/매도 데이터가 없습니다.</p>'
+
+    top_flow = flow_df.reindex(flow_df["거래량_순매수"].abs().sort_values(ascending=False).index).head(10)
     return make_grouped_bar_html(
         top_flow["종목명"].astype(str).tolist(),
         [
             {"name": "매수", "values": top_flow["거래량_매수"].tolist(), "color": BUY_COLOR},
             {"name": "매도", "values": top_flow["거래량_매도"].tolist(), "color": SELL_COLOR},
         ],
-        note="외국인 1개월 누적 거래량 기준입니다. 단위는 주이며, 빨강은 매수 수량, 파랑은 매도 수량입니다.",
+        note=f"{buyer} {period_name} 누적 거래량 기준입니다. 단위는 주이며, 빨강은 매수 수량, 파랑은 매도 수량입니다.",
         legend=[
             {"label": "매수 수량", "color": BUY_COLOR},
             {"label": "매도 수량", "color": SELL_COLOR},
         ],
+    )
+
+
+def create_total_volume_chart(base_df: pd.DataFrame, buyer: str, period_start: int, period_name: str) -> str:
+    volume_df = base_period_df(base_df, buyer, period_start)
+    if volume_df.empty:
+        return f'<p class="empty-chart">{escape(period_name)} {escape(buyer)} 거래총량 데이터가 없습니다.</p>'
+
+    top_volume = volume_df.sort_values("거래량_총량", ascending=False).head(10)
+    rows = [
+        {
+            "name": row["종목명"],
+            "buy": row["거래량_매수"],
+            "sell": row["거래량_매도"],
+            "total": row["거래량_총량"],
+        }
+        for _, row in top_volume.iterrows()
+    ]
+    return make_total_volume_html(
+        rows,
+        note=f"{buyer} {period_name} 거래총량 TOP10입니다. 거래총량은 매수량과 매도량을 더한 값이며, 단위는 주입니다.",
     )
 
 
@@ -690,7 +785,33 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
     df_clean = last_df.fillna(0).copy()
 
     if base_df is not None:
-        add_html_chart(charts, "1개월 외국인 매수/매도 수량 TOP10", create_buy_sell_chart(base_df))
+        for buyer in ["외국인", "기관합계"]:
+            add_html_chart(
+                charts,
+                f"1개월 {buyer} 매수/매도 수량 TOP10",
+                create_buy_sell_chart(base_df, buyer, -30, "1개월"),
+                category="flow",
+                investor=buyer,
+                description="매수량과 매도량을 종목별로 비교합니다.",
+            )
+            add_html_chart(
+                charts,
+                f"1개월 {buyer} 거래총량 TOP10",
+                create_total_volume_chart(base_df, buyer, -30, "1개월"),
+                category="volume",
+                investor=buyer,
+                description="매수량과 매도량을 합산한 거래총량입니다.",
+            )
+        for buyer in ["외국인", "기관합계"]:
+            for period_start, period_name in [(-90, "3개월"), (-180, "6개월")]:
+                add_html_chart(
+                    charts,
+                    f"{period_name} {buyer} 거래총량 TOP10",
+                    create_total_volume_chart(base_df, buyer, period_start, period_name),
+                    category="volume",
+                    investor=buyer,
+                    description=f"기간별 {buyer} 거래총량 상위 종목입니다.",
+                )
 
     if ("1개월누적", "외국인") in df_clean.columns and ("1개월누적", "기관합계") in df_clean.columns:
         top10_idx = df_clean[("1개월누적", "외국인")].nlargest(10).index
@@ -708,6 +829,9 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
                 note="1개월 누적 거래량 기준 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
                 color_by_sign=True,
             ),
+            category="net",
+            investor="외국인",
+            description="외국인 순매수 상위 종목과 기관합계를 함께 봅니다.",
         )
 
         scatter_df = df_clean[[("1개월누적", "외국인"), ("1개월누적", "기관합계")]].copy()
@@ -717,7 +841,14 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
             {"name": scatter_names[index], "x": row["외국인"], "y": row["기관합계"]}
             for index, (_, row) in enumerate(scatter_df.iterrows())
         ]
-        add_html_chart(charts, "외국인 vs 기관합계 순매수", make_scatter_html(points))
+        add_html_chart(
+            charts,
+            "외국인 vs 기관합계 순매수",
+            make_scatter_html(points),
+            category="compare",
+            investor="외국인/기관합계",
+            description="외국인과 기관합계 순매수 방향을 산점도로 비교합니다.",
+        )
 
     recent_periods = [
         period
@@ -739,6 +870,9 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
                 note="최근 거래일별 전체 종목 평균 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
                 color_by_sign=True,
             ),
+            category="net",
+            investor="외국인/기관합계",
+            description="최근 거래일의 평균 순매수 흐름입니다.",
         )
 
     acc_periods = [
@@ -761,6 +895,9 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
                 note="1개월/3개월/6개월 누적 구간의 전체 종목 평균 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
                 color_by_sign=True,
             ),
+            category="compare",
+            investor="외국인/기관합계",
+            description="기간별 평균 순매수 규모를 비교합니다.",
         )
 
     return charts
@@ -1235,7 +1372,7 @@ PAGE_TEMPLATE = """
       margin: 26px 0 0;
       font-size: 24px;
       letter-spacing: 0;
-      color: var(--navy);
+      color: var(--text);
     }
     .metric {
       background: rgba(57,255,136,.045);
@@ -1277,11 +1414,64 @@ PAGE_TEMPLATE = """
       text-decoration: none;
       background: rgba(57,255,136,.035);
     }
+    .dashboard-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-top: 22px;
+      padding: 12px;
+      border: 1px solid rgba(57,255,136,.16);
+      border-radius: 8px;
+      background: rgba(0,0,0,.18);
+    }
+    .dashboard-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .dashboard-filter-group {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .filter-label {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .filter-button {
+      width: auto;
+      min-height: 36px;
+      padding: 0 13px;
+      border: 1px solid rgba(212,255,232,.16);
+      background: rgba(8,17,13,.92);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .filter-button.active,
+    .filter-button:hover {
+      border-color: var(--accent);
+      background: rgba(57,255,136,.12);
+      color: var(--text);
+      box-shadow: 0 0 16px rgba(57,255,136,.12);
+    }
+    .chart-count {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
     .visuals {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr));
       gap: 16px;
       margin-top: 22px;
+    }
+    .chart-card.is-hidden {
+      display: none;
     }
     .chart-card {
       position: relative;
@@ -1307,11 +1497,19 @@ PAGE_TEMPLATE = """
     }
     .chart-card h3 {
       position: relative;
-      margin: 0 0 12px;
+      margin: 0 0 8px;
       font-size: 17px;
       letter-spacing: 0;
       color: #dfffea;
       text-shadow: 0 0 14px rgba(57,255,136,.18);
+    }
+    .chart-kicker {
+      position: relative;
+      margin: 0 0 12px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+      font-weight: 800;
     }
     .html-chart {
       position: relative;
@@ -1407,6 +1605,62 @@ PAGE_TEMPLATE = """
       color: var(--text);
       font-weight: 800;
       text-align: right;
+    }
+    .total-volume-chart {
+      gap: 12px;
+    }
+    .total-volume-row {
+      display: grid;
+      grid-template-columns: minmax(92px, 160px) minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      border-bottom: 1px solid rgba(57,255,136,.10);
+      padding-bottom: 10px;
+    }
+    .total-volume-row:last-child {
+      border-bottom: 0;
+      padding-bottom: 0;
+    }
+    .total-volume-body {
+      display: grid;
+      gap: 7px;
+    }
+    .total-volume-track {
+      height: 16px;
+      border-radius: 999px;
+      background: rgba(212,255,232,.08);
+      border: 1px solid rgba(212,255,232,.08);
+      overflow: hidden;
+    }
+    .total-volume-fill {
+      display: flex;
+      height: 100%;
+      min-width: 2px;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .total-segment {
+      display: block;
+      height: 100%;
+    }
+    .total-segment.buy {
+      background: var(--red);
+      box-shadow: 0 0 13px var(--red);
+    }
+    .total-segment.sell {
+      background: #2f80ff;
+      box-shadow: 0 0 13px #2f80ff;
+    }
+    .total-volume-values {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 12px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .total-volume-values span:first-child {
+      color: var(--text);
     }
     .scatter-wrap {
       position: relative;
@@ -1547,6 +1801,16 @@ PAGE_TEMPLATE = """
       .system-bar { align-items: flex-start; flex-direction: column; padding: 16px 18px; }
       form, .result, .visuals { grid-template-columns: 1fr; }
       .span2, .span3, .span6, .fixed-scope, .remember-field { grid-column: auto; }
+      .dashboard-controls { align-items: flex-start; flex-direction: column; }
+      .dashboard-filters { display: grid; gap: 10px; }
+      .chart-count { white-space: normal; }
+      .chart-row,
+      .total-volume-row {
+        grid-template-columns: 1fr;
+      }
+      .mini-bar-row {
+        grid-template-columns: 86px minmax(0, 1fr) 82px;
+      }
     }
   </style>
 </head>
@@ -1652,10 +1916,30 @@ PAGE_TEMPLATE = """
         <a class="download" href="/download">엑셀 다운로드</a>
 
         {% if result.charts %}
+          <div class="dashboard-controls" data-dashboard-controls>
+            <div class="dashboard-filters">
+              <div class="dashboard-filter-group" aria-label="차트 지표 필터">
+                <span class="filter-label">지표</span>
+                <button type="button" class="filter-button active" data-dashboard-filter="all">전체</button>
+                <button type="button" class="filter-button" data-dashboard-filter="flow">매수·매도</button>
+                <button type="button" class="filter-button" data-dashboard-filter="volume">거래총량</button>
+                <button type="button" class="filter-button" data-dashboard-filter="net">순매수</button>
+                <button type="button" class="filter-button" data-dashboard-filter="compare">비교</button>
+              </div>
+              <div class="dashboard-filter-group" aria-label="투자자 필터">
+                <span class="filter-label">투자자</span>
+                <button type="button" class="filter-button active" data-investor-filter="all">전체</button>
+                <button type="button" class="filter-button" data-investor-filter="외국인">외국인</button>
+                <button type="button" class="filter-button" data-investor-filter="기관합계">기관합계</button>
+              </div>
+            </div>
+            <div class="chart-count" id="chart-count"></div>
+          </div>
           <section class="visuals">
             {% for chart in result.charts %}
-              <article class="chart-card">
+              <article class="chart-card" data-chart-category="{{ chart.category }}" data-chart-investor="{{ chart.investor }}">
                 <h3>{{ chart.title }}</h3>
+                {% if chart.description %}<p class="chart-kicker">{{ chart.description }}</p>{% endif %}
                 {{ chart.html | safe }}
               </article>
             {% endfor %}
@@ -1766,6 +2050,54 @@ PAGE_TEMPLATE = """
           if (value >= 95) clearInterval(timer);
         }, 450);
       });
+    }
+
+    const filterButtons = Array.from(document.querySelectorAll("[data-dashboard-filter]"));
+    const investorFilterButtons = Array.from(document.querySelectorAll("[data-investor-filter]"));
+    const chartCards = Array.from(document.querySelectorAll("[data-chart-category]"));
+    const chartCount = document.getElementById("chart-count");
+    const dashboardFilterState = {
+      category: "all",
+      investor: "all"
+    };
+
+    function applyDashboardFilter() {
+      let visibleCount = 0;
+      chartCards.forEach((card) => {
+        const categoryMatches = dashboardFilterState.category === "all"
+          || card.dataset.chartCategory === dashboardFilterState.category;
+        const investorValue = card.dataset.chartInvestor || "";
+        const investorMatches = dashboardFilterState.investor === "all"
+          || investorValue.includes(dashboardFilterState.investor);
+        const shouldShow = categoryMatches && investorMatches;
+        card.classList.toggle("is-hidden", !shouldShow);
+        if (shouldShow) visibleCount += 1;
+      });
+      filterButtons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.dashboardFilter === dashboardFilterState.category);
+      });
+      investorFilterButtons.forEach((button) => {
+        button.classList.toggle("active", button.dataset.investorFilter === dashboardFilterState.investor);
+      });
+      if (chartCount) {
+        chartCount.textContent = `표시 중 ${visibleCount}개 / 전체 ${chartCards.length}개`;
+      }
+    }
+
+    if (filterButtons.length && chartCards.length) {
+      filterButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          dashboardFilterState.category = button.dataset.dashboardFilter;
+          applyDashboardFilter();
+        });
+      });
+      investorFilterButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+          dashboardFilterState.investor = button.dataset.investorFilter;
+          applyDashboardFilter();
+        });
+      });
+      applyDashboardFilter();
     }
   </script>
 </body>
