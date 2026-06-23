@@ -69,3 +69,12 @@ http://127.0.0.1:5000/docs
 - GitHub: 코드 저장소
 - Supabase: 작업 상태/결과 메타데이터/파일 저장
 - Vercel: 웹 앱 배포
+
+## Vercel 설정
+
+Vercel Python 런타임이 Flask 앱을 찾을 수 있도록 `pyproject.toml`에 아래 entrypoint를 지정했습니다.
+
+```toml
+[tool.vercel]
+entrypoint = "ghj_codex_V_03:app"
+```

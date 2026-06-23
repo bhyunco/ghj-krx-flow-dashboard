@@ -1,0 +1,2 @@
+[tool.vercel]
+entrypoint = "ghj_codex_V_03:app"
