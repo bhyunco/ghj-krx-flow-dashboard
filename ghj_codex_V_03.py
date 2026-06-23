@@ -257,6 +257,11 @@ def supabase_json_request(
             return json.loads(raw)
     except HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
+        if "PGRST205" in body or "Could not find the table" in body:
+            raise RuntimeError(
+                "Supabase 테이블이 아직 생성되지 않았습니다. "
+                "Supabase SQL Editor에서 저장소의 supabase_schema.sql 내용을 먼저 실행하세요."
+            ) from exc
         raise RuntimeError(f"Supabase 요청 실패 HTTP {exc.code}: {body[:500]}") from exc
 
 
