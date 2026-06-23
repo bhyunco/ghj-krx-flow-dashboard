@@ -525,17 +525,65 @@ def compact_number(value: Any) -> str:
     return f"{sign}{number:,.0f}"
 
 
-def make_grouped_bar_html(labels: list[str], series: list[dict[str, Any]]) -> str:
+BUY_COLOR = "#ff4d5f"
+SELL_COLOR = "#2f80ff"
+
+
+def make_chart_meta_html(note: str, legend: list[dict[str, str]]) -> str:
+    legend_html = "".join(
+        f"""
+        <span class="legend-item">
+          <span class="legend-dot" style="background:{escape(item["color"])}; box-shadow:0 0 10px {escape(item["color"])};"></span>
+          {escape(item["label"])}
+        </span>
+        """
+        for item in legend
+    )
+    return f"""
+    <div class="chart-meta">
+      <div class="chart-note">{escape(note)}</div>
+      <div class="chart-legend">{legend_html}</div>
+    </div>
+    """
+
+
+def format_chart_value(value: Any, unit: str = "주") -> str:
+    number = compact_number(value)
+    return f"{number}{unit}" if unit else number
+
+
+def make_grouped_bar_html(
+    labels: list[str],
+    series: list[dict[str, Any]],
+    *,
+    note: str,
+    unit: str = "주",
+    legend: list[dict[str, str]] | None = None,
+    color_by_sign: bool = False,
+) -> str:
     all_values = [abs(float(value)) for item in series for value in item["values"]]
     max_abs = max(all_values) if all_values else 1
     rows = []
-    colors = ["#39ff88", "#3ba7ff", "#ff4d6d", "#ffd166"]
+    default_colors = [BUY_COLOR, SELL_COLOR]
+    if legend is None:
+        if color_by_sign:
+            legend = [
+                {"label": "순매수(+)", "color": BUY_COLOR},
+                {"label": "순매도(-)", "color": SELL_COLOR},
+            ]
+        else:
+            legend = [
+                {"label": str(item["name"]), "color": str(item.get("color") or default_colors[index % 2])}
+                for index, item in enumerate(series)
+            ]
     for row_index, label in enumerate(labels):
         bars = []
         for series_index, item in enumerate(series):
             value = float(item["values"][row_index])
             width = min(abs(value) / max_abs * 100, 100)
-            color = item.get("color") or colors[series_index % len(colors)]
+            color = BUY_COLOR if value >= 0 else SELL_COLOR
+            if not color_by_sign:
+                color = item.get("color") or default_colors[series_index % len(default_colors)]
             direction = "negative" if value < 0 else "positive"
             bars.append(
                 f"""
@@ -544,7 +592,7 @@ def make_grouped_bar_html(labels: list[str], series: list[dict[str, Any]]) -> st
                   <div class="mini-bar-track">
                     <span class="mini-bar {direction}" style="width:{width:.2f}%; background:{color}; box-shadow:0 0 13px {color};"></span>
                   </div>
-                  <span class="bar-value">{escape(compact_number(value))}</span>
+                  <span class="bar-value">{escape(format_chart_value(value, unit))}</span>
                 </div>
                 """
             )
@@ -556,7 +604,7 @@ def make_grouped_bar_html(labels: list[str], series: list[dict[str, Any]]) -> st
             </div>
             """
         )
-    return f'<div class="html-chart grouped-bar">{"".join(rows)}</div>'
+    return f'<div class="html-chart grouped-bar">{make_chart_meta_html(note, legend)}{"".join(rows)}</div>'
 
 
 def make_scatter_html(points: list[dict[str, Any]]) -> str:
@@ -571,14 +619,21 @@ def make_scatter_html(points: list[dict[str, Any]]) -> str:
         y = 50 - (float(point["y"]) / max_abs) * 42
         x = min(max(x, 5), 95)
         y = min(max(y, 5), 95)
-        color = "#ff4d6d" if float(point["x"]) >= 0 else "#3ba7ff"
+        color = BUY_COLOR if float(point["x"]) >= 0 else SELL_COLOR
         svg_points.append(
             f'<circle cx="{x:.2f}%" cy="{y:.2f}%" r="2.6" fill="{color}" opacity="0.56">'
-            f'<title>{escape(point["name"])} / 외국인 {escape(compact_number(point["x"]))} / 기관 {escape(compact_number(point["y"]))}</title>'
+            f'<title>{escape(point["name"])} / 외국인 {escape(format_chart_value(point["x"]))} / 기관 {escape(format_chart_value(point["y"]))}</title>'
             '</circle>'
         )
     return f"""
     <div class="scatter-wrap">
+      {make_chart_meta_html(
+        "거래량 기준 순매수 비교입니다. 단위는 주이며, 빨강은 외국인 순매수(+), 파랑은 외국인 순매도(-)를 뜻합니다.",
+        [
+          {"label": "외국인 순매수(+)", "color": BUY_COLOR},
+          {"label": "외국인 순매도(-)", "color": SELL_COLOR},
+        ],
+      )}
       <svg viewBox="0 0 100 100" role="img" aria-label="외국인 기관합계 산점도">
         <line x1="50" y1="4" x2="50" y2="96" stroke="#7b8a90" stroke-width="0.4" />
         <line x1="4" y1="50" x2="96" y2="50" stroke="#7b8a90" stroke-width="0.4" />
@@ -616,8 +671,13 @@ def create_buy_sell_chart(base_df: pd.DataFrame) -> str:
     return make_grouped_bar_html(
         top_flow["종목명"].astype(str).tolist(),
         [
-            {"name": "매수", "values": top_flow["거래량_매수"].tolist(), "color": "#ff4d6d"},
-            {"name": "매도", "values": top_flow["거래량_매도"].tolist(), "color": "#3ba7ff"},
+            {"name": "매수", "values": top_flow["거래량_매수"].tolist(), "color": BUY_COLOR},
+            {"name": "매도", "values": top_flow["거래량_매도"].tolist(), "color": SELL_COLOR},
+        ],
+        note="외국인 1개월 누적 거래량 기준입니다. 단위는 주이며, 빨강은 매수 수량, 파랑은 매도 수량입니다.",
+        legend=[
+            {"label": "매수 수량", "color": BUY_COLOR},
+            {"label": "매도 수량", "color": SELL_COLOR},
         ],
     )
 
@@ -630,7 +690,7 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
     df_clean = last_df.fillna(0).copy()
 
     if base_df is not None:
-        add_html_chart(charts, "1개월 외국인 매수/매도 강도 TOP10", create_buy_sell_chart(base_df))
+        add_html_chart(charts, "1개월 외국인 매수/매도 수량 TOP10", create_buy_sell_chart(base_df))
 
     if ("1개월누적", "외국인") in df_clean.columns and ("1개월누적", "기관합계") in df_clean.columns:
         top10_idx = df_clean[("1개월누적", "외국인")].nlargest(10).index
@@ -638,13 +698,15 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
         plot_df.columns = ["외국인", "기관합계"]
         add_html_chart(
             charts,
-            "1개월누적 외국인 TOP10",
+            "1개월 외국인 순매수 TOP10",
             make_grouped_bar_html(
                 stock_names_from_index(plot_df.index),
                 [
-                    {"name": "외국인", "values": plot_df["외국인"].tolist(), "color": "#39ff88"},
-                    {"name": "기관합계", "values": plot_df["기관합계"].tolist(), "color": "#3ba7ff"},
+                    {"name": "외국인 순매수", "values": plot_df["외국인"].tolist()},
+                    {"name": "기관합계 순매수", "values": plot_df["기관합계"].tolist()},
                 ],
+                note="1개월 누적 거래량 기준 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
+                color_by_sign=True,
             ),
         )
 
@@ -655,7 +717,7 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
             {"name": scatter_names[index], "x": row["외국인"], "y": row["기관합계"]}
             for index, (_, row) in enumerate(scatter_df.iterrows())
         ]
-        add_html_chart(charts, "외국인 vs 기관합계", make_scatter_html(points))
+        add_html_chart(charts, "외국인 vs 기관합계 순매수", make_scatter_html(points))
 
     recent_periods = [
         period
@@ -667,13 +729,15 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
         inst_mean = df_clean.xs("기관합계", level=1, axis=1)[recent_periods].mean()
         add_html_chart(
             charts,
-            "최근 거래일 평균",
+            "최근 거래일 평균 순매수",
             make_grouped_bar_html(
                 recent_periods,
                 [
-                    {"name": "외국인", "values": foreign_mean.tolist(), "color": "#39ff88"},
-                    {"name": "기관합계", "values": inst_mean.tolist(), "color": "#3ba7ff"},
+                    {"name": "외국인 순매수", "values": foreign_mean.tolist()},
+                    {"name": "기관합계 순매수", "values": inst_mean.tolist()},
                 ],
+                note="최근 거래일별 전체 종목 평균 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
+                color_by_sign=True,
             ),
         )
 
@@ -687,13 +751,15 @@ def create_visualizations(last_df: pd.DataFrame, base_df: pd.DataFrame | None = 
         inst_acc = df_clean.xs("기관합계", level=1, axis=1)[acc_periods].mean()
         add_html_chart(
             charts,
-            "누적 평균 비교",
+            "기간별 평균 순매수 비교",
             make_grouped_bar_html(
                 acc_periods,
                 [
-                    {"name": "외국인", "values": foreign_acc.tolist(), "color": "#39ff88"},
-                    {"name": "기관합계", "values": inst_acc.tolist(), "color": "#3ba7ff"},
+                    {"name": "외국인 순매수", "values": foreign_acc.tolist()},
+                    {"name": "기관합계 순매수", "values": inst_acc.tolist()},
                 ],
+                note="1개월/3개월/6개월 누적 구간의 전체 종목 평균 순매수입니다. 단위는 주이며, 빨강은 순매수(+), 파랑은 순매도(-)입니다.",
+                color_by_sign=True,
             ),
         )
 
@@ -1252,6 +1318,41 @@ PAGE_TEMPLATE = """
       display: grid;
       gap: 12px;
     }
+    .chart-meta {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 2px;
+      padding: 10px 12px;
+      border: 1px solid rgba(212,255,232,.10);
+      border-radius: 6px;
+      background: rgba(0,0,0,.18);
+    }
+    .chart-note {
+      color: #c8dfd2;
+      font-size: 12px;
+      line-height: 1.5;
+      font-weight: 800;
+    }
+    .chart-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 14px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+    }
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      box-shadow: 0 0 10px currentColor;
+    }
     .chart-row {
       display: grid;
       grid-template-columns: minmax(92px, 160px) minmax(0, 1fr);
@@ -1276,7 +1377,7 @@ PAGE_TEMPLATE = """
     }
     .mini-bar-row {
       display: grid;
-      grid-template-columns: 64px minmax(0, 1fr) 72px;
+      grid-template-columns: 104px minmax(0, 1fr) 88px;
       gap: 8px;
       align-items: center;
     }
@@ -1310,7 +1411,7 @@ PAGE_TEMPLATE = """
     .scatter-wrap {
       position: relative;
       min-height: 360px;
-      padding: 8px 8px 34px 42px;
+      padding: 0 8px 34px 42px;
     }
     .scatter-wrap svg {
       display: block;
