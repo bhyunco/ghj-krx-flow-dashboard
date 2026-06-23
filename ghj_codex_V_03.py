@@ -904,27 +904,31 @@ PAGE_TEMPLATE = """
   <title>GHJ_PRJ_V_03</title>
   <style>
     :root {
-      color-scheme: light;
-      --bg: #eef2f7;
-      --panel: #ffffff;
-      --panel-soft: #f7f9fc;
-      --text: #17222b;
-      --muted: #607080;
-      --line: #d7e0ea;
-      --navy: #102235;
-      --navy-2: #172d44;
-      --accent: #007c89;
-      --accent-dark: #005d68;
-      --red: #c4302b;
-      --danger: #b3261e;
-      --success: #166534;
-      --shadow: 0 18px 42px rgba(16, 34, 53, .12);
+      color-scheme: dark;
+      --bg: #030705;
+      --panel: #08110d;
+      --panel-soft: #0c1712;
+      --text: #eafff3;
+      --muted: #8aae9f;
+      --line: #1d3a2e;
+      --navy: #050b09;
+      --navy-2: #0b1712;
+      --accent: #39ff88;
+      --accent-dark: #14d86a;
+      --cyan: #00e5ff;
+      --red: #ff4d6d;
+      --danger: #ff5f79;
+      --success: #39ff88;
+      --shadow: 0 22px 70px rgba(0, 255, 136, .10), 0 0 0 1px rgba(57,255,136,.08);
     }
     * { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      background: linear-gradient(180deg, #e9eef5 0%, #f6f8fb 44%, #eef2f7 100%);
+      background:
+        radial-gradient(circle at 16% 0%, rgba(57,255,136,.16), transparent 28%),
+        radial-gradient(circle at 88% 8%, rgba(0,229,255,.14), transparent 24%),
+        linear-gradient(180deg, #020403 0%, #06100c 48%, #030705 100%);
       color: var(--text);
       font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
     }
@@ -934,8 +938,8 @@ PAGE_TEMPLATE = """
       inset: 0;
       pointer-events: none;
       background-image:
-        linear-gradient(rgba(16, 34, 53, .045) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(16, 34, 53, .045) 1px, transparent 1px);
+        linear-gradient(rgba(57, 255, 136, .055) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 229, 255, .045) 1px, transparent 1px);
       background-size: 28px 28px;
       mask-image: linear-gradient(180deg, rgba(0,0,0,.8), transparent 58%);
     }
@@ -947,7 +951,7 @@ PAGE_TEMPLATE = """
     }
     .panel {
       background: var(--panel);
-      border: 1px solid var(--line);
+      border: 1px solid rgba(57,255,136,.22);
       border-radius: 8px;
       box-shadow: var(--shadow);
       overflow: hidden;
@@ -959,9 +963,10 @@ PAGE_TEMPLATE = """
       align-items: center;
       min-height: 64px;
       padding: 0 26px;
-      background: var(--navy);
-      color: #e8f0f7;
-      border-bottom: 3px solid var(--accent);
+      background: linear-gradient(90deg, #050b09 0%, #0b1712 62%, #072118 100%);
+      color: var(--text);
+      border-bottom: 1px solid rgba(57,255,136,.55);
+      box-shadow: inset 0 -1px 0 rgba(0,229,255,.20);
     }
     .brand-lockup {
       display: flex;
@@ -975,8 +980,10 @@ PAGE_TEMPLATE = """
       width: 34px;
       height: 34px;
       border-radius: 7px;
-      background: #e8f0f7;
-      color: var(--navy);
+      background: rgba(57,255,136,.12);
+      border: 1px solid rgba(57,255,136,.68);
+      color: var(--accent);
+      box-shadow: 0 0 18px rgba(57,255,136,.22);
       font-weight: 1000;
       letter-spacing: 0;
     }
@@ -986,7 +993,7 @@ PAGE_TEMPLATE = """
       white-space: nowrap;
     }
     .brand-sub {
-      color: #a9bbca;
+      color: var(--muted);
       font-size: 12px;
       font-weight: 800;
       white-space: nowrap;
@@ -1003,10 +1010,10 @@ PAGE_TEMPLATE = """
       align-items: center;
       min-height: 30px;
       padding: 0 10px;
-      border: 1px solid rgba(232,240,247,.24);
+      border: 1px solid rgba(57,255,136,.28);
       border-radius: 999px;
-      color: #d8e5ef;
-      background: rgba(255,255,255,.06);
+      color: #d8ffe8;
+      background: rgba(57,255,136,.06);
       font-size: 12px;
       font-weight: 900;
     }
@@ -1021,24 +1028,6 @@ PAGE_TEMPLATE = """
     }
     h1 { margin: 0; font-size: clamp(30px, 4vw, 46px); letter-spacing: 0; }
     .sub { margin: 10px 0 0; color: var(--muted); line-height: 1.6; }
-    .origin-note {
-      margin-top: 16px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 12px 14px;
-      border: 1px solid #ccd9e5;
-      border-left: 4px solid var(--red);
-      border-radius: 8px;
-      background: #fbfcfe;
-      color: #33485c;
-      font-weight: 850;
-      line-height: 1.55;
-    }
-    .origin-note span {
-      color: var(--red);
-      font-weight: 1000;
-    }
     form {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -1049,6 +1038,7 @@ PAGE_TEMPLATE = """
       background: var(--panel-soft);
       border: 1px solid var(--line);
       border-radius: 8px;
+      box-shadow: inset 0 0 34px rgba(57,255,136,.025);
     }
     .field { display: grid; gap: 7px; }
     .span2 { grid-column: span 2; }
@@ -1069,7 +1059,7 @@ PAGE_TEMPLATE = """
       grid-column: span 6;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #ffffff;
+      background: rgba(57,255,136,.035);
       padding: 14px 16px;
       color: var(--muted);
       line-height: 1.6;
@@ -1086,25 +1076,26 @@ PAGE_TEMPLATE = """
     input, select {
       border: 1px solid var(--line);
       padding: 0 12px;
-      background: #fff;
+      background: #07100c;
+      color: var(--text);
     }
     input:focus,
     select:focus {
-      outline: 2px solid rgba(0, 124, 137, .22);
+      outline: 2px solid rgba(57, 255, 136, .22);
       border-color: var(--accent);
     }
     button {
       border: 0;
       background: var(--accent);
-      color: #fff;
+      color: #001a0c;
       font-weight: 900;
       cursor: pointer;
     }
-    button:hover { background: var(--accent-dark); }
+    button:hover { background: var(--accent-dark); box-shadow: 0 0 18px rgba(57,255,136,.22); }
     .messages { display: grid; gap: 8px; margin-top: 20px; }
     .message { margin: 0; padding: 12px 14px; border-radius: 6px; font-weight: 800; }
-    .error { color: var(--danger); background: #fff1f1; }
-    .success { color: var(--success); background: #edf9f2; }
+    .error { color: var(--danger); background: rgba(255,77,109,.10); border: 1px solid rgba(255,77,109,.28); }
+    .success { color: var(--success); background: rgba(57,255,136,.08); border: 1px solid rgba(57,255,136,.24); }
     .result {
       display: grid;
       grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1118,7 +1109,7 @@ PAGE_TEMPLATE = """
       color: var(--navy);
     }
     .metric {
-      background: #fbfcfe;
+      background: rgba(57,255,136,.045);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 16px;
@@ -1134,7 +1125,7 @@ PAGE_TEMPLATE = """
       padding: 0 18px;
       border-radius: 6px;
       background: var(--accent);
-      color: #fff;
+      color: #001a0c;
       font-weight: 900;
       text-decoration: none;
     }
@@ -1152,10 +1143,10 @@ PAGE_TEMPLATE = """
       padding: 0 18px;
       border-radius: 6px;
       border: 1px solid var(--accent);
-      color: var(--accent-dark);
+      color: var(--accent);
       font-weight: 900;
       text-decoration: none;
-      background: #fff;
+      background: rgba(57,255,136,.035);
     }
     .visuals {
       display: grid;
@@ -1166,7 +1157,7 @@ PAGE_TEMPLATE = """
     .chart-card {
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #fbfcfe;
+      background: rgba(5,12,9,.74);
       padding: 16px;
     }
     .chart-card h3 {
@@ -1183,7 +1174,7 @@ PAGE_TEMPLATE = """
       grid-template-columns: minmax(92px, 160px) minmax(0, 1fr);
       gap: 12px;
       align-items: start;
-      border-bottom: 1px solid #edf2f3;
+      border-bottom: 1px solid rgba(57,255,136,.10);
       padding-bottom: 10px;
     }
     .chart-row:last-child {
@@ -1214,7 +1205,7 @@ PAGE_TEMPLATE = """
     .mini-bar-track {
       height: 12px;
       border-radius: 999px;
-      background: #e6eef0;
+      background: rgba(57,255,136,.10);
       overflow: hidden;
     }
     .mini-bar {
@@ -1242,7 +1233,7 @@ PAGE_TEMPLATE = """
       height: 340px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: #f8fbfa;
+      background: #07100c;
     }
     .axis-label {
       color: var(--muted);
@@ -1277,7 +1268,7 @@ PAGE_TEMPLATE = """
       width: 100%;
       border-collapse: collapse;
       min-width: 760px;
-      background: #fff;
+      background: #07100c;
     }
     th, td {
       border-bottom: 1px solid var(--line);
@@ -1287,8 +1278,8 @@ PAGE_TEMPLATE = """
       font-size: 13px;
     }
     th {
-      background: #edf3f8;
-      color: var(--navy);
+      background: rgba(57,255,136,.09);
+      color: var(--accent);
       font-weight: 900;
     }
     .loading {
@@ -1298,14 +1289,15 @@ PAGE_TEMPLATE = """
       display: none;
       align-items: center;
       justify-content: center;
-      background: rgba(15, 23, 42, .45);
+      background: rgba(0, 0, 0, .72);
       padding: 20px;
     }
     .loading.active { display: flex; }
     .loading-box {
       width: min(460px, 100%);
       border-radius: 8px;
-      background: #fff;
+      background: #08110d;
+      border: 1px solid rgba(57,255,136,.25);
       padding: 24px;
       box-shadow: 0 24px 70px rgba(15, 23, 42, .28);
     }
@@ -1318,7 +1310,7 @@ PAGE_TEMPLATE = """
       height: 12px;
       overflow: hidden;
       border-radius: 999px;
-      background: #dbe4e7;
+      background: rgba(57,255,136,.12);
       margin-top: 16px;
     }
     .bar-fill {
@@ -1376,7 +1368,7 @@ PAGE_TEMPLATE = """
           <div class="brand-mark">D</div>
           <div>
             <div class="brand-name">GHJ_PRJ_V_03</div>
-            <div class="brand-sub">DAISHIN INTERNAL ANALYTICS</div>
+            <div class="brand-sub">INSTITUTIONAL FLOW TERMINAL</div>
           </div>
         </div>
         <div class="status-stack">
@@ -1389,7 +1381,6 @@ PAGE_TEMPLATE = """
       <p class="eyebrow">GHJ_PRJ_V_03</p>
       <h1>오늘 기준 KRX 수급 분석</h1>
       <p class="sub">아이디, 비밀번호, OpenAPI 키만 입력하면 기존 노트북처럼 누적 구간과 최근 일별 수급을 한 번에 조회하고 기본 시각화까지 바로 보여줍니다.</p>
-      <div class="origin-note"><span>HISTORY</span> 대신증권의 고현진 주임이 몇개월간 고민하고 만든 자료입니다.</div>
       <div class="top-actions">
         <a class="secondary-link" href="/docs" target="_blank" rel="noopener">프로그램 상세 설명 보기</a>
         {% if user %}
@@ -1612,28 +1603,28 @@ AUTH_TEMPLATE = """
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GHJ_PRJ_V_03 · {{ title }}</title>
   <style>
-    body { margin:0; min-height:100vh; display:grid; place-items:center; background:linear-gradient(180deg,#e9eef5,#f6f8fb); color:#17222b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
-    .box { width:min(460px, calc(100% - 32px)); background:#fff; border:1px solid #d7e0ea; border-radius:8px; overflow:hidden; box-shadow:0 18px 42px rgba(16,34,53,.12); }
-    .auth-head { padding:18px 24px; background:#102235; color:#e8f0f7; border-bottom:3px solid #007c89; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(circle at 18% 0%, rgba(57,255,136,.18), transparent 30%), linear-gradient(180deg,#020403,#06100c); color:#eafff3; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    .box { width:min(460px, calc(100% - 32px)); background:#08110d; border:1px solid rgba(57,255,136,.24); border-radius:8px; overflow:hidden; box-shadow:0 22px 70px rgba(0,255,136,.10); }
+    .auth-head { padding:18px 24px; background:#050b09; color:#eafff3; border-bottom:1px solid rgba(57,255,136,.55); }
     .auth-head strong { display:block; font-size:18px; }
-    .auth-head span { display:block; margin-top:4px; color:#a9bbca; font-size:12px; font-weight:800; }
+    .auth-head span { display:block; margin-top:4px; color:#8aae9f; font-size:12px; font-weight:800; }
     .auth-body { padding:28px; }
     h1 { margin:0 0 8px; letter-spacing:0; }
-    p { color:#637176; line-height:1.6; }
+    p { color:#8aae9f; line-height:1.6; }
     form { display:grid; gap:14px; margin-top:18px; }
-    label { color:#637176; font-size:13px; font-weight:800; }
+    label { color:#8aae9f; font-size:13px; font-weight:800; }
     input, button { width:100%; min-height:44px; border-radius:6px; font:inherit; box-sizing:border-box; }
-    input { border:1px solid #d8e2e3; padding:0 12px; }
-    button { border:0; background:#007c89; color:#fff; font-weight:900; cursor:pointer; }
-    a { color:#005d68; font-weight:900; }
-    .message { padding:10px 12px; border-radius:6px; background:#fff1f1; color:#b3261e; font-weight:800; }
+    input { border:1px solid #1d3a2e; padding:0 12px; background:#07100c; color:#eafff3; }
+    button { border:0; background:#39ff88; color:#001a0c; font-weight:900; cursor:pointer; }
+    a { color:#39ff88; font-weight:900; }
+    .message { padding:10px 12px; border-radius:6px; background:rgba(255,77,109,.10); color:#ff5f79; font-weight:800; border:1px solid rgba(255,77,109,.28); }
   </style>
 </head>
 <body>
   <main class="box">
     <div class="auth-head">
       <strong>GHJ_PRJ_V_03</strong>
-      <span>DAISHIN INTERNAL ANALYTICS</span>
+      <span>INSTITUTIONAL FLOW TERMINAL</span>
     </div>
     <div class="auth-body">
     <h1>{{ title }}</h1>
@@ -1671,18 +1662,18 @@ HISTORY_TEMPLATE = """
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GHJ_PRJ_V_03 · 조회 이력</title>
   <style>
-    body { margin:0; background:linear-gradient(180deg,#e9eef5,#f6f8fb); color:#17222b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    body { margin:0; background:radial-gradient(circle at 16% 0%, rgba(57,255,136,.14), transparent 28%), linear-gradient(180deg,#020403,#06100c); color:#eafff3; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
     main { width:min(1180px, calc(100% - 32px)); margin:0 auto; padding:32px 0; }
-    .panel { background:#fff; border:1px solid #d7e0ea; border-radius:8px; overflow:hidden; box-shadow:0 18px 42px rgba(16,34,53,.12); }
-    .hist-head { padding:20px 26px; background:#102235; color:#e8f0f7; border-bottom:3px solid #007c89; }
-    .hist-head p { margin:6px 0 0; color:#a9bbca; font-weight:800; }
+    .panel { background:#08110d; border:1px solid rgba(57,255,136,.24); border-radius:8px; overflow:hidden; box-shadow:0 22px 70px rgba(0,255,136,.10); }
+    .hist-head { padding:20px 26px; background:#050b09; color:#eafff3; border-bottom:1px solid rgba(57,255,136,.55); }
+    .hist-head p { margin:6px 0 0; color:#8aae9f; font-weight:800; }
     .hist-body { padding:26px; }
     h1 { margin:0 0 16px; letter-spacing:0; }
-    a { color:#005d68; font-weight:900; }
+    a { color:#39ff88; font-weight:900; }
     table { width:100%; border-collapse:collapse; min-width:860px; }
-    th, td { border-bottom:1px solid #d8e2e3; padding:10px 12px; text-align:left; white-space:nowrap; font-size:13px; }
-    th { background:#edf3f8; color:#102235; }
-    .wrap { overflow:auto; border:1px solid #d7e0ea; border-radius:8px; }
+    th, td { border-bottom:1px solid #1d3a2e; padding:10px 12px; text-align:left; white-space:nowrap; font-size:13px; }
+    th { background:rgba(57,255,136,.09); color:#39ff88; }
+    .wrap { overflow:auto; border:1px solid #1d3a2e; border-radius:8px; }
     .actions { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
   </style>
 </head>
@@ -1691,7 +1682,7 @@ HISTORY_TEMPLATE = """
     <section class="panel">
       <div class="hist-head">
         <h1>GHJ_PRJ_V_03 · 조회 이력</h1>
-        <p>대신증권의 고현진 주임이 몇개월간 고민하고 만든 자료입니다.</p>
+        <p>회원별 KRX 수급 조회 기록과 결과 파일을 추적합니다.</p>
       </div>
       <div class="hist-body">
       <div class="actions">
