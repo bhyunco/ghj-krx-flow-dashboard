@@ -369,7 +369,9 @@ def storage_signed_url(storage_path: str, expires_in: int = 3600) -> str:
         raise RuntimeError("Supabase Storage signed URL 생성에 실패했습니다.")
     if signed_url.startswith("http"):
         return signed_url
-    return f"{SUPABASE_URL}{signed_url}"
+    if signed_url.startswith("/storage/v1/"):
+        return f"{SUPABASE_URL}{signed_url}"
+    return f"{SUPABASE_URL}/storage/v1/{signed_url.lstrip('/')}"
 
 
 def parse_yyyymmdd(value: str) -> date:
