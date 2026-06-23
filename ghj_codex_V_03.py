@@ -12,7 +12,7 @@ from urllib import parse, request
 from urllib.error import HTTPError
 
 import pandas as pd
-from flask import Flask, flash, render_template_string, request as flask_request, send_file
+from flask import Flask, flash, redirect, render_template_string, request as flask_request, send_file, session, url_for
 from markupsafe import escape
 
 
@@ -56,10 +56,14 @@ METADATA_COLUMNS = [
 
 OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", "/tmp/ghj-krx-outputs" if os.environ.get("VERCEL") else "outputs"))
 DOC_PATH = Path("프로그램_상세설명.md")
-LAST_OUTPUT_PATH: Path | None = None
 RECENT_TRADING_DAYS = 5
 MAX_CALENDAR_LOOKBACK = 20
 REQUEST_TIMEOUT = 30
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
+SUPABASE_ANON_KEY = os.environ.get("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_STORAGE_BUCKET = os.environ.get("SUPABASE_STORAGE_BUCKET", "krx-results")
+SAVE_QUERY_ROWS = os.environ.get("SAVE_QUERY_ROWS", "true").lower() != "false"
 
 
 @dataclass(frozen=True)
@@ -80,6 +84,8 @@ class RunResult:
     trading_dates: list[str]
     charts: list[dict[str, str]]
     top_rows: list[dict[str, Any]]
+    job_id: str | None = None
+    storage_path: str | None = None
 
 
 class KrxInvestorApi:
@@ -198,6 +204,167 @@ class KrxInvestorApi:
             if isinstance(rows, list):
                 return [row for row in rows if isinstance(row, dict)]
         return []
+
+
+def supabase_configured() -> bool:
+    return bool(SUPABASE_URL and SUPABASE_ANON_KEY and SUPABASE_SERVICE_ROLE_KEY)
+
+
+def supabase_json_request(
+    path: str,
+    *,
+    method: str = "GET",
+    payload: Any | None = None,
+    service_role: bool = False,
+    access_token: str | None = None,
+    extra_headers: dict[str, str] | None = None,
+) -> Any:
+    if not SUPABASE_URL:
+        raise RuntimeError("SUPABASE_URL 환경변수가 설정되지 않았습니다.")
+
+    key = SUPABASE_SERVICE_ROLE_KEY if service_role else SUPABASE_ANON_KEY
+    if not key:
+        key_name = "SUPABASE_SERVICE_ROLE_KEY" if service_role else "SUPABASE_ANON_KEY"
+        raise RuntimeError(f"{key_name} 환경변수가 설정되지 않았습니다.")
+
+    headers = {
+        "apikey": key,
+        "Authorization": f"Bearer {access_token or key}",
+        "Content-Type": "application/json",
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
+    data = None
+    if payload is not None:
+        data = json.dumps(
+            payload,
+            ensure_ascii=False,
+            default=lambda obj: obj.item() if hasattr(obj, "item") else str(obj),
+        ).encode("utf-8")
+
+    req = request.Request(
+        f"{SUPABASE_URL}{path}",
+        data=data,
+        headers=headers,
+        method=method,
+    )
+    try:
+        with request.urlopen(req, timeout=45) as response:
+            raw = response.read().decode("utf-8")
+            if not raw:
+                return None
+            return json.loads(raw)
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Supabase 요청 실패 HTTP {exc.code}: {body[:500]}") from exc
+
+
+def supabase_signup(email: str, password: str) -> dict[str, Any]:
+    return supabase_json_request(
+        "/auth/v1/signup",
+        method="POST",
+        payload={"email": email, "password": password},
+    )
+
+
+def supabase_signin(email: str, password: str) -> dict[str, Any]:
+    return supabase_json_request(
+        "/auth/v1/token?grant_type=password",
+        method="POST",
+        payload={"email": email, "password": password},
+    )
+
+
+def set_auth_session(auth_data: dict[str, Any]) -> None:
+    user = auth_data.get("user") or {}
+    session["access_token"] = auth_data.get("access_token")
+    session["refresh_token"] = auth_data.get("refresh_token")
+    session["user_id"] = user.get("id")
+    session["email"] = user.get("email")
+
+
+def current_user() -> dict[str, str] | None:
+    user_id = session.get("user_id")
+    email = session.get("email")
+    if not user_id:
+        return None
+    return {"id": str(user_id), "email": str(email or "")}
+
+
+def require_current_user() -> dict[str, str]:
+    user = current_user()
+    if not user:
+        raise RuntimeError("로그인이 필요합니다.")
+    return user
+
+
+def rest_insert(table: str, rows: Any, *, returning: bool = True) -> Any:
+    headers = {"Prefer": "return=representation" if returning else "return=minimal"}
+    return supabase_json_request(
+        f"/rest/v1/{table}",
+        method="POST",
+        payload=rows,
+        service_role=True,
+        extra_headers=headers,
+    )
+
+
+def rest_update(table: str, filters: str, values: dict[str, Any]) -> Any:
+    return supabase_json_request(
+        f"/rest/v1/{table}?{filters}",
+        method="PATCH",
+        payload=values,
+        service_role=True,
+        extra_headers={"Prefer": "return=representation"},
+    )
+
+
+def rest_select(table: str, query: str) -> Any:
+    return supabase_json_request(
+        f"/rest/v1/{table}?{query}",
+        method="GET",
+        service_role=True,
+    )
+
+
+def storage_upload(local_path: Path, storage_path: str) -> None:
+    if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        raise RuntimeError("Supabase Storage 업로드 환경변수가 설정되지 않았습니다.")
+
+    headers = {
+        "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "x-upsert": "true",
+    }
+    req = request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SUPABASE_STORAGE_BUCKET}/{parse.quote(storage_path)}",
+        data=local_path.read_bytes(),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with request.urlopen(req, timeout=90):
+            return
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Supabase Storage 업로드 실패 HTTP {exc.code}: {body[:500]}") from exc
+
+
+def storage_signed_url(storage_path: str, expires_in: int = 3600) -> str:
+    data = supabase_json_request(
+        f"/storage/v1/object/sign/{SUPABASE_STORAGE_BUCKET}/{parse.quote(storage_path)}",
+        method="POST",
+        payload={"expiresIn": expires_in},
+        service_role=True,
+    )
+    signed_url = data.get("signedURL") or data.get("signedUrl")
+    if not signed_url:
+        raise RuntimeError("Supabase Storage signed URL 생성에 실패했습니다.")
+    if signed_url.startswith("http"):
+        return signed_url
+    return f"{SUPABASE_URL}{signed_url}"
 
 
 def parse_yyyymmdd(value: str) -> date:
@@ -519,6 +686,102 @@ def create_top_rows(last_df: pd.DataFrame, limit: int = 15) -> list[dict[str, An
     return flat_df[display_cols].head(limit).to_dict("records")
 
 
+def json_safe(value: Any) -> Any:
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except ValueError:
+            pass
+    return value
+
+
+def period_label(period_start: int) -> str:
+    period = abs(int(period_start))
+    if period == 30:
+        return "1개월누적"
+    if period == 90:
+        return "3개월누적"
+    if period == 180:
+        return "6개월누적"
+    return f"{period}일전"
+
+
+def base_rows_to_records(base_df: pd.DataFrame, job_id: str, user_id: str) -> list[dict[str, Any]]:
+    records = []
+    for row in base_df.to_dict("records"):
+        period_start = int(json_safe(row.get("period(D-00)_start")) or 0)
+        records.append({
+            "job_id": job_id,
+            "user_id": user_id,
+            "stock_code": str(row.get("종목코드", "")).zfill(6),
+            "stock_name": str(row.get("종목명", "")),
+            "buyer": str(row.get("buyer", "")),
+            "period_label": period_label(period_start),
+            "period_start": period_start,
+            "period_end": int(json_safe(row.get("period(D-00)_end")) or 0),
+            "sell_volume": int(json_safe(row.get("거래량_매도")) or 0),
+            "buy_volume": int(json_safe(row.get("거래량_매수")) or 0),
+            "net_buy_volume": int(json_safe(row.get("거래량_순매수")) or 0),
+            "sell_value": int(json_safe(row.get("거래대금_매도")) or 0),
+            "buy_value": int(json_safe(row.get("거래대금_매수")) or 0),
+            "net_buy_value": int(json_safe(row.get("거래대금_순매수")) or 0),
+        })
+    return records
+
+
+def insert_in_chunks(table: str, records: list[dict[str, Any]], chunk_size: int = 1000) -> None:
+    for start in range(0, len(records), chunk_size):
+        rest_insert(table, records[start:start + chunk_size], returning=False)
+
+
+def create_query_job(user_id: str, market: str, as_of: date) -> str:
+    rows = rest_insert("query_jobs", [{
+        "user_id": user_id,
+        "status": "running",
+        "market": market,
+        "as_of": as_of.isoformat(),
+        "started_at": datetime.now().isoformat(),
+    }])
+    if not rows:
+        raise RuntimeError("query_jobs 생성에 실패했습니다.")
+    return rows[0]["id"]
+
+
+def complete_query_job(
+    job_id: str,
+    trading_dates: list[str],
+    base_rows: int,
+    last_rows: int,
+    storage_path: str | None,
+) -> None:
+    rest_update(
+        "query_jobs",
+        f"id=eq.{job_id}",
+        {
+            "status": "completed",
+            "trading_dates": trading_dates,
+            "base_rows": base_rows,
+            "last_rows": last_rows,
+            "excel_path": storage_path,
+            "completed_at": datetime.now().isoformat(),
+        },
+    )
+
+
+def fail_query_job(job_id: str, message: str) -> None:
+    rest_update(
+        "query_jobs",
+        f"id=eq.{job_id}",
+        {
+            "status": "failed",
+            "error_message": message[:1000],
+            "completed_at": datetime.now().isoformat(),
+        },
+    )
+
+
 def write_outputs(base_df: pd.DataFrame, last_df: pd.DataFrame, out_dir: Path, now: datetime) -> tuple[Path, int]:
     out_dir.mkdir(parents=True, exist_ok=True)
     last_df_reset = flatten_columns(last_df.reset_index())
@@ -538,48 +801,79 @@ def run_collection(
     as_of: date,
     market: str,
     output_root: Path,
+    user_id: str | None = None,
 ) -> RunResult:
     if not krx_id or not krx_pw:
         raise ValueError("KRX 아이디와 비밀번호를 모두 입력해야 합니다.")
     if not openapi_key:
         raise ValueError("OpenAPI 키를 입력해야 합니다.")
+    if user_id and not supabase_configured():
+        raise RuntimeError("Supabase 환경변수가 설정되지 않아 로그인 사용자 결과를 저장할 수 없습니다.")
 
     now = datetime.now()
     out_dir = output_root / now.strftime("%Y%m%d")
-    api = KrxInvestorApi(krx_id, krx_pw, timeout=REQUEST_TIMEOUT)
+    job_id = create_query_job(user_id, market, as_of) if user_id else None
 
-    jobs = build_jobs(as_of)
-    recent_jobs, trading_dates = collect_recent_trading_day_jobs(
-        api=api,
-        as_of=as_of,
-        market=market,
-        trading_days=RECENT_TRADING_DAYS,
-        max_calendar_lookback=MAX_CALENDAR_LOOKBACK,
-    )
-    jobs.extend(recent_jobs)
+    try:
+        api = KrxInvestorApi(krx_id, krx_pw, timeout=REQUEST_TIMEOUT)
 
-    frames = []
-    for job in jobs:
-        df = api.fetch_net_buy_top_stocks(job.buyer, job.start_date, job.end_date, market)
-        if not df.empty:
-            frames.append(add_metadata(df, job, now))
+        jobs = build_jobs(as_of)
+        recent_jobs, trading_dates = collect_recent_trading_day_jobs(
+            api=api,
+            as_of=as_of,
+            market=market,
+            trading_days=RECENT_TRADING_DAYS,
+            max_calendar_lookback=MAX_CALENDAR_LOOKBACK,
+        )
+        jobs.extend(recent_jobs)
 
-    if not frames:
-        raise RuntimeError("수집된 데이터가 없습니다.")
+        frames = []
+        for job in jobs:
+            df = api.fetch_net_buy_top_stocks(job.buyer, job.start_date, job.end_date, market)
+            if not df.empty:
+                frames.append(add_metadata(df, job, now))
 
-    base_df = pd.concat(frames, ignore_index=True)
-    last_df = create_pivot(base_df)
-    charts = create_visualizations(last_df)
-    top_rows = create_top_rows(last_df)
-    output_path, last_rows = write_outputs(base_df, last_df, out_dir, now)
-    return RunResult(
-        output_path=output_path,
-        base_rows=len(base_df),
-        last_rows=last_rows,
-        trading_dates=trading_dates,
-        charts=charts,
-        top_rows=top_rows,
-    )
+        if not frames:
+            raise RuntimeError("수집된 데이터가 없습니다.")
+
+        base_df = pd.concat(frames, ignore_index=True)
+        last_df = create_pivot(base_df)
+        charts = create_visualizations(last_df)
+        top_rows = create_top_rows(last_df)
+        output_path, last_rows = write_outputs(base_df, last_df, out_dir, now)
+
+        storage_path = None
+        if job_id and user_id:
+            storage_path = f"{user_id}/{job_id}/{output_path.name}"
+            storage_upload(output_path, storage_path)
+            rest_insert("query_summaries", [{
+                "job_id": job_id,
+                "user_id": user_id,
+                "top_rows": top_rows,
+                "chart_data": charts,
+                "pivot_columns": list(flatten_columns(last_df.reset_index()).columns),
+            }], returning=False)
+            if SAVE_QUERY_ROWS:
+                insert_in_chunks("query_rows", base_rows_to_records(base_df, job_id, user_id))
+            complete_query_job(job_id, trading_dates, len(base_df), last_rows, storage_path)
+
+        return RunResult(
+            output_path=output_path,
+            base_rows=len(base_df),
+            last_rows=last_rows,
+            trading_dates=trading_dates,
+            charts=charts,
+            top_rows=top_rows,
+            job_id=job_id,
+            storage_path=storage_path,
+        )
+    except Exception as exc:
+        if job_id:
+            try:
+                fail_query_job(job_id, str(exc))
+            except Exception:
+                pass
+        raise
 
 
 app = Flask(__name__)
@@ -966,7 +1260,14 @@ PAGE_TEMPLATE = """
       <p class="sub">아이디, 비밀번호, OpenAPI 키만 입력하면 기존 노트북처럼 누적 구간과 최근 일별 수급을 한 번에 조회하고 기본 시각화까지 바로 보여줍니다.</p>
       <div class="top-actions">
         <a class="secondary-link" href="/docs" target="_blank" rel="noopener">프로그램 상세 설명 보기</a>
+        {% if user %}
+          <a class="secondary-link" href="/history">조회 이력</a>
+          <a class="secondary-link" href="/logout">로그아웃</a>
+        {% endif %}
       </div>
+      {% if user %}
+        <p class="sub">로그인 계정: {{ user.email }}</p>
+      {% endif %}
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
@@ -1170,6 +1471,125 @@ DOC_TEMPLATE = """
 </html>
 """
 
+AUTH_TEMPLATE = """
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }}</title>
+  <style>
+    body { margin:0; min-height:100vh; display:grid; place-items:center; background:#f3f6f5; color:#1d282b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    .box { width:min(440px, calc(100% - 32px)); background:#fff; border:1px solid #d8e2e3; border-radius:8px; padding:28px; box-shadow:0 16px 36px rgba(29,40,43,.08); }
+    h1 { margin:0 0 8px; letter-spacing:0; }
+    p { color:#637176; line-height:1.6; }
+    form { display:grid; gap:14px; margin-top:18px; }
+    label { color:#637176; font-size:13px; font-weight:800; }
+    input, button { width:100%; min-height:44px; border-radius:6px; font:inherit; box-sizing:border-box; }
+    input { border:1px solid #d8e2e3; padding:0 12px; }
+    button { border:0; background:#0b8069; color:#fff; font-weight:900; cursor:pointer; }
+    a { color:#096653; font-weight:900; }
+    .message { padding:10px 12px; border-radius:6px; background:#fff1f1; color:#b3261e; font-weight:800; }
+  </style>
+</head>
+<body>
+  <main class="box">
+    <h1>{{ title }}</h1>
+    <p>{{ description }}</p>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="message">{{ message }}</div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+    <form method="post">
+      <div>
+        <label for="email">이메일</label>
+        <input id="email" name="email" type="email" autocomplete="email" required>
+      </div>
+      <div>
+        <label for="password">비밀번호</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <button type="submit">{{ button }}</button>
+    </form>
+    <p>{{ switch_text }} <a href="{{ switch_url }}">{{ switch_label }}</a></p>
+  </main>
+</body>
+</html>
+"""
+
+HISTORY_TEMPLATE = """
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>조회 이력</title>
+  <style>
+    body { margin:0; background:#f3f6f5; color:#1d282b; font-family:"Segoe UI","Malgun Gothic",Arial,sans-serif; }
+    main { width:min(1100px, calc(100% - 32px)); margin:0 auto; padding:32px 0; }
+    .panel { background:#fff; border:1px solid #d8e2e3; border-radius:8px; padding:26px; box-shadow:0 16px 36px rgba(29,40,43,.08); }
+    h1 { margin:0 0 16px; letter-spacing:0; }
+    a { color:#096653; font-weight:900; }
+    table { width:100%; border-collapse:collapse; min-width:860px; }
+    th, td { border-bottom:1px solid #d8e2e3; padding:10px 12px; text-align:left; white-space:nowrap; font-size:13px; }
+    th { background:#eef5f4; color:#24423d; }
+    .wrap { overflow:auto; border:1px solid #d8e2e3; border-radius:8px; }
+    .actions { display:flex; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="panel">
+      <div class="actions">
+        <a href="/">분석 화면</a>
+        <a href="/logout">로그아웃</a>
+      </div>
+      <h1>조회 이력</h1>
+      {% if jobs %}
+        <div class="wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>생성일</th>
+                <th>상태</th>
+                <th>기준일</th>
+                <th>시장</th>
+                <th>Base</th>
+                <th>Last</th>
+                <th>최근 거래일</th>
+                <th>엑셀</th>
+                <th>오류</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for job in jobs %}
+                <tr>
+                  <td>{{ job.created_at or "" }}</td>
+                  <td>{{ job.status }}</td>
+                  <td>{{ job.as_of }}</td>
+                  <td>{{ job.market }}</td>
+                  <td>{{ "{:,}".format(job.base_rows or 0) }}</td>
+                  <td>{{ "{:,}".format(job.last_rows or 0) }}</td>
+                  <td>{{ ", ".join(job.trading_dates or []) }}</td>
+                  <td>{% if job.excel_path %}<a href="/download?path={{ job.excel_path|urlencode }}">다운로드</a>{% endif %}</td>
+                  <td>{{ job.error_message or "" }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p>아직 조회 이력이 없습니다.</p>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>
+"""
+
 
 def default_form() -> dict[str, Any]:
     return {
@@ -1182,8 +1602,10 @@ def default_form() -> dict[str, Any]:
 
 @app.route("/", methods=["GET", "POST"])
 def index():
-    global LAST_OUTPUT_PATH
+    if supabase_configured() and not current_user():
+        return redirect(url_for("login"))
 
+    user = current_user()
     form = default_form()
     result = None
 
@@ -1204,8 +1626,11 @@ def index():
                 as_of=parse_yyyymmdd(form["as_of"]),
                 market=form["market"],
                 output_root=OUTPUT_ROOT,
+                user_id=user["id"] if user else None,
             )
-            LAST_OUTPUT_PATH = result.output_path
+            session["last_output_path"] = str(result.output_path)
+            if result.storage_path:
+                session["last_storage_path"] = result.storage_path
             flash(f"수집 완료: {result.output_path}", "success")
         except Exception as exc:
             flash(str(exc), "error")
@@ -1215,15 +1640,98 @@ def index():
         form=form,
         markets=MARKET_CODES.keys(),
         result=result,
+        user=user,
     )
 
 
 @app.route("/download")
 def download():
-    if not LAST_OUTPUT_PATH or not LAST_OUTPUT_PATH.exists():
+    requested_path = flask_request.args.get("path") or session.get("last_storage_path")
+    if requested_path and supabase_configured():
+        user = current_user()
+        if not user:
+            return redirect(url_for("login"))
+        if not str(requested_path).startswith(f"{user['id']}/"):
+            flash("해당 파일에 접근할 수 없습니다.", "error")
+            return redirect(url_for("history"))
+        return redirect(storage_signed_url(str(requested_path)))
+
+    local_path_raw = session.get("last_output_path")
+    local_path = Path(local_path_raw) if local_path_raw else None
+    if not local_path or not local_path.exists() or not local_path.is_file():
         flash("다운로드할 결과 파일이 없습니다.", "error")
-        return render_template_string(PAGE_TEMPLATE, form=default_form(), markets=MARKET_CODES.keys(), result=None)
-    return send_file(LAST_OUTPUT_PATH, as_attachment=True, download_name=LAST_OUTPUT_PATH.name)
+        return render_template_string(PAGE_TEMPLATE, form=default_form(), markets=MARKET_CODES.keys(), result=None, user=current_user())
+    return send_file(local_path, as_attachment=True, download_name=local_path.name)
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if not supabase_configured():
+        flash("Supabase 환경변수가 설정되지 않았습니다.", "error")
+        return redirect(url_for("index"))
+    if flask_request.method == "POST":
+        email = flask_request.form.get("email", "").strip()
+        password = flask_request.form.get("password", "")
+        try:
+            data = supabase_signup(email, password)
+            if data.get("access_token"):
+                set_auth_session(data)
+                return redirect(url_for("index"))
+            flash("회원가입이 완료되었습니다. 이메일 인증을 켠 경우 메일 인증 후 로그인하세요.", "success")
+            return redirect(url_for("login"))
+        except Exception as exc:
+            flash(str(exc), "error")
+    return render_template_string(
+        AUTH_TEMPLATE,
+        title="회원가입",
+        description="조회 이력을 저장하려면 먼저 계정을 만들어야 합니다.",
+        button="회원가입",
+        switch_text="이미 계정이 있나요?",
+        switch_url=url_for("login"),
+        switch_label="로그인",
+    )
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if not supabase_configured():
+        flash("Supabase 환경변수가 설정되지 않았습니다.", "error")
+        return redirect(url_for("index"))
+    if flask_request.method == "POST":
+        email = flask_request.form.get("email", "").strip()
+        password = flask_request.form.get("password", "")
+        try:
+            set_auth_session(supabase_signin(email, password))
+            return redirect(url_for("index"))
+        except Exception as exc:
+            flash(str(exc), "error")
+    return render_template_string(
+        AUTH_TEMPLATE,
+        title="로그인",
+        description="로그인 후 KRX 조회를 실행하면 결과가 Supabase에 저장됩니다.",
+        button="로그인",
+        switch_text="처음 사용하시나요?",
+        switch_url=url_for("signup"),
+        switch_label="회원가입",
+    )
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login" if supabase_configured() else "index"))
+
+
+@app.route("/history")
+def history():
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+    jobs = rest_select(
+        "query_jobs",
+        f"user_id=eq.{user['id']}&select=id,status,market,as_of,trading_dates,base_rows,last_rows,excel_path,error_message,created_at&order=created_at.desc&limit=50",
+    )
+    return render_template_string(HISTORY_TEMPLATE, jobs=jobs or [], user=user)
 
 
 def markdown_to_html(markdown_text: str) -> str:

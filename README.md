@@ -51,6 +51,26 @@ outputs/YYYYMMDD/YYYY-MM-DD_통합파일.xlsx
 
 웹 화면의 `엑셀 다운로드` 버튼으로도 받을 수 있습니다.
 
+## Supabase 설정
+
+배포 환경에서는 회원가입/로그인, 조회 이력, 엑셀 파일 저장에 Supabase를 사용합니다.
+
+Vercel Environment Variables에 아래 값을 설정하세요.
+
+```text
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_STORAGE_BUCKET=krx-results
+FLASK_SECRET_KEY=
+```
+
+Supabase SQL Editor에서 `supabase_schema.sql` 내용을 실행하면 필요한 테이블과 RLS 정책이 생성됩니다.
+
+Storage에는 `krx-results` bucket을 private bucket으로 생성하세요.
+
+보안상 `SUPABASE_SERVICE_ROLE_KEY`는 GitHub에 커밋하지 말고 Vercel Environment Variables에만 저장해야 합니다.
+
 ## 문서
 
 - `프로그램_상세설명.md`
