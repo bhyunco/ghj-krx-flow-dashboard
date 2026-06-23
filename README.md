@@ -72,9 +72,10 @@ http://127.0.0.1:5000/docs
 
 ## Vercel 설정
 
-Vercel Python 런타임이 Flask 앱을 찾을 수 있도록 `pyproject.toml`에 아래 entrypoint를 지정했습니다.
+Vercel Python 런타임이 Flask 앱을 찾을 수 있도록 `api/index.py`를 진입점으로 사용합니다.
 
-```toml
-[tool.vercel]
-entrypoint = "ghj_codex_V_03:app"
+```python
+from ghj_codex_V_03 import app
 ```
+
+`vercel.json`은 모든 경로를 `/api/index`로 rewrite합니다.

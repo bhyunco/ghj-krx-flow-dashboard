@@ -60,7 +60,7 @@ METADATA_COLUMNS = [
     "buyer",
 ]
 
-OUTPUT_ROOT = Path("outputs")
+OUTPUT_ROOT = Path(os.environ.get("OUTPUT_ROOT", "/tmp/ghj-krx-outputs" if os.environ.get("VERCEL") else "outputs"))
 DOC_PATH = Path("프로그램_상세설명.md")
 LAST_OUTPUT_PATH: Path | None = None
 RECENT_TRADING_DAYS = 5
