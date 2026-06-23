@@ -79,3 +79,5 @@ from ghj_codex_V_03 import app
 ```
 
 `vercel.json`은 모든 경로를 `/api/index`로 rewrite합니다.
+
+배포 로그에서 `No project table found in pyproject.toml` 오류가 반복되면 Vercel이 이전 커밋을 다시 빌드하고 있는 것입니다. Deployments 화면에서 최신 `main` 커밋을 선택해 Redeploy 하거나 GitHub push로 새 배포를 트리거하세요.
